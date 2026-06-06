@@ -1,16 +1,16 @@
-# Sale management system using T-SQL and Northwind Database
+# Banking transaction management system T-SQL
 
 ## Overview
 
 ## Architecture
 ### Database
-![img.png](static/img.png)
+
 ## Getting started
 ### Installation
-1. Clone the repository
-`git clone https://github.com/notworLe/Sales-Management-System-Using-T-SQL-and-Northwind-Database.git`
-2. Installing Docker Deskstop
-3. Seed sample data **(optional)**  
+1. Clone the repository  
+`git clone: https://github.com/notworLe/Banking_Transaction_Management_T-SQL.git`
+2. Installing **Docker Desktop**  
+3. Seed sample data  
 Run the following SQL file to populate the database with sample data.  
 Click on `instnwnd.sql`, execute this file.
 4. 
