@@ -4,7 +4,7 @@
 
 ## Architecture
 ### Database
-
+![database diagram](static/db.png)
 ## Getting started
 ### Installation
 1. Clone the repository  
@@ -12,6 +12,6 @@
 2. Installing **Docker Desktop**  
 3. Seed sample data  
 Run the following SQL file to populate the database with sample data.  
-Click on `instnwnd.sql`, execute this file.
+Click on `sample_database.sql`, execute this file.
 4. 
 
