@@ -1,0 +1,87 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Danh sách người dùng — Banking Transaction Management{% endblock %}
+
+{% block page_header %}
+<div class="app-page-header d-flex flex-wrap justify-content-between align-items-start gap-2">
+    <div>
+        <h1>Danh sách người dùng</h1>
+        <p class="page-subtitle">Quản lý tài khoản và trạng thái người dùng hệ thống</p>
+    </div>
+    <span class="badge bg-secondary fs-6">{{ users | length }} người dùng</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="card app-card app-data-card">
+    <div class="card-header">
+        <span class="card-header-title">
+            <i class="bi bi-people text-primary"></i>
+            Danh sách người dùng
+        </span>
+    </div>
+
+    {% if users %}
+    <div class="table-responsive app-table-scroll">
+        <table class="table table-hover app-table align-middle">
+            <thead>
+                <tr>
+                    <th>Tên đăng nhập</th>
+                    <th>Vai trò</th>
+                    <th>Trạng thái</th>
+                    <th>Đăng nhập cuối</th>
+                    <th>Ngày tạo</th>
+                    <th class="text-end">Thao tác</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for u in users %}
+                <tr>
+                    <td class="fw-medium">{{ u.username }}</td>
+                    <td>
+                        {% if u.role == 'admin' %}
+                        <span class="badge bg-primary">Quản trị</span>
+                        {% elif u.role == 'banker' %}
+                        <span class="badge bg-success">Giao dịch viên</span>
+                        {% else %}
+                        <span class="badge bg-info text-dark">Khách hàng</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if u.status == 'active' %}
+                        <span class="badge bg-success-subtle text-success border border-success-subtle">Hoạt động</span>
+                        {% else %}
+                        <span class="badge bg-danger-subtle text-danger border border-danger-subtle">Đã khóa</span>
+                        {% endif %}
+                    </td>
+                    <td class="tabular-nums">{{ u.last_login_at }}</td>
+                    <td class="tabular-nums">{{ u.created_at }}</td>
+                    <td class="text-end">
+                        <form method="POST" action="{{ url_for('admin.toggle_user_status', user_id=u.id) }}" class="d-inline">
+                            {% if u.status == 'active' %}
+                            <button type="submit" class="btn btn-sm btn-outline-danger"
+                                    onclick="return confirm('Khóa tài khoản {{ u.username }}?')">
+                                <i class="bi bi-lock me-1"></i>Khóa
+                            </button>
+                            {% else %}
+                            <button type="submit" class="btn btn-sm btn-outline-success"
+                                    onclick="return confirm('Mở khóa tài khoản {{ u.username }}?')">
+                                <i class="bi bi-unlock me-1"></i>Mở khóa
+                            </button>
+                            {% endif %}
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="app-empty-state">
+        <div class="empty-icon"><i class="bi bi-person-x"></i></div>
+        <h6>Chưa có người dùng</h6>
+        <p>Danh sách tài khoản người dùng hệ thống sẽ hiển thị tại đây.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

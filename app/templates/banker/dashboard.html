@@ -1,0 +1,101 @@
+{% extends "banker_base.html" %}
+
+{% block title %}{{ dashboard.title }} — Banking Transaction Management{% endblock %}
+
+{% block page_header %}
+<div class="app-page-header">
+    <h1>{{ dashboard.title }}</h1>
+    <p class="page-subtitle">Tổng quan khách hàng, tài khoản và giao dịch trong ngày</p>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row g-3 mb-4">
+    {% for stat in dashboard.stats %}
+    <div class="col-sm-6 col-xl-3">
+        <div class="card stat-card h-100">
+            <div class="card-body d-flex align-items-center gap-3">
+                <div class="stat-icon">
+                    <i class="bi bi-{{ stat.icon }}"></i>
+                </div>
+                <div class="min-w-0">
+                    <p class="text-muted small mb-1">{{ stat.label }}</p>
+                    <p class="stat-value mb-0 tabular-nums">{{ stat.value }}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<div class="app-dashboard-quick-actions">
+    <a href="{{ url_for('banker.customers') }}" class="btn btn-outline-primary btn-sm">
+        <i class="bi bi-person-lines-fill me-1"></i>Khách hàng
+    </a>
+    <a href="{{ url_for('banker.accounts') }}" class="btn btn-outline-primary btn-sm">
+        <i class="bi bi-credit-card me-1"></i>Tài khoản
+    </a>
+    <a href="{{ url_for('banker.deposit') }}" class="btn btn-outline-success btn-sm">
+        <i class="bi bi-plus-circle me-1"></i>Nạp tiền
+    </a>
+    <a href="{{ url_for('banker.withdraw') }}" class="btn btn-outline-danger btn-sm">
+        <i class="bi bi-dash-circle me-1"></i>Rút tiền
+    </a>
+    <a href="{{ url_for('banker.transfer') }}" class="btn btn-outline-primary btn-sm">
+        <i class="bi bi-arrow-left-right me-1"></i>Chuyển khoản
+    </a>
+</div>
+
+<div class="card app-card app-data-card">
+    <div class="card-header">
+        <span class="card-header-title">
+            <i class="bi bi-clock-history text-primary"></i>
+            Giao dịch gần đây
+        </span>
+        <a href="{{ url_for('banker.transactions') }}" class="btn btn-sm btn-outline-primary">Xem tất cả</a>
+    </div>
+
+    {% if dashboard.recent_transactions %}
+    <div class="table-responsive app-table-scroll">
+        <table class="table table-hover app-table align-middle">
+            <thead>
+                <tr>
+                    <th>Thời gian</th>
+                    <th>Loại</th>
+                    <th class="d-none d-md-table-cell">Tài khoản</th>
+                    <th class="text-end">Số tiền</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for tx in dashboard.recent_transactions %}
+                <tr>
+                    <td class="text-nowrap tabular-nums">{{ tx.time }}</td>
+                    <td>
+                        {% if tx.type == 'Nạp tiền' %}
+                        <span class="badge bg-success-subtle text-success border border-success-subtle">Nạp tiền</span>
+                        {% elif tx.type == 'Rút tiền' %}
+                        <span class="badge bg-danger-subtle text-danger border border-danger-subtle">Rút tiền</span>
+                        {% else %}
+                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle">{{ tx.type }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="d-none d-md-table-cell tabular-nums">{{ tx.account }}</td>
+                    <td class="text-end fw-medium tabular-nums">{{ tx.amount }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="app-empty-state">
+        <div class="empty-icon"><i class="bi bi-receipt"></i></div>
+        <h6>Chưa có giao dịch hôm nay</h6>
+        <p>Giao dịch nạp, rút và chuyển khoản sẽ hiển thị tại đây.</p>
+        <div class="empty-cta">
+            <a href="{{ url_for('banker.deposit') }}" class="btn btn-sm btn-success me-1">Nạp tiền</a>
+            <a href="{{ url_for('banker.transactions') }}" class="btn btn-sm btn-outline-primary">Lịch sử giao dịch</a>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

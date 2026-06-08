@@ -1,0 +1,99 @@
+{% extends "banker_base.html" %}
+
+{% block title %}Danh sách tài khoản — Banking Transaction Management{% endblock %}
+
+{% block page_header %}
+<div class="app-page-header d-flex flex-wrap justify-content-between align-items-start gap-2">
+    <div>
+        <h1>Danh sách tài khoản</h1>
+        <p class="page-subtitle">Quản lý tài khoản ngân hàng và số dư khách hàng</p>
+    </div>
+    <a href="{{ url_for('banker.accounts_open') }}" class="btn btn-success">
+        <i class="bi bi-wallet2 me-1"></i>Mở tài khoản
+    </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="card app-card app-data-card">
+    <div class="card-header">
+        <span class="card-header-title">
+            <i class="bi bi-credit-card text-primary"></i>
+            Tài khoản ngân hàng
+        </span>
+        <span class="card-header-meta">{{ accounts | length }} tài khoản</span>
+    </div>
+
+    <div class="app-table-toolbar">
+        <div class="toolbar-search">
+            <div class="input-group input-group-sm">
+                <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                <input type="search" class="form-control" placeholder="Tìm theo số tài khoản, tên khách hàng..."
+                       disabled aria-label="Tìm kiếm tài khoản (UI demo)">
+            </div>
+        </div>
+        <div class="toolbar-filters">
+            <select class="form-select form-select-sm" disabled aria-label="Lọc loại tài khoản (UI demo)">
+                <option selected>Tất cả loại</option>
+                <option>Thanh toán</option>
+                <option>Tiết kiệm</option>
+            </select>
+            <select class="form-select form-select-sm" disabled aria-label="Lọc trạng thái (UI demo)">
+                <option selected>Tất cả trạng thái</option>
+                <option>Hoạt động</option>
+                <option>Đã khóa</option>
+                <option>Đã đóng</option>
+            </select>
+            <span class="toolbar-badge">Bộ lọc demo</span>
+        </div>
+    </div>
+
+    {% if accounts %}
+    <div class="table-responsive app-table-scroll">
+        <table class="table table-hover app-table align-middle">
+            <thead>
+                <tr>
+                    <th>Số tài khoản</th>
+                    <th>Khách hàng</th>
+                    <th>Loại tài khoản</th>
+                    <th class="text-end">Số dư</th>
+                    <th>Trạng thái</th>
+                    <th class="d-none d-md-table-cell">Ngày mở</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for acc in accounts %}
+                <tr>
+                    <td class="fw-medium tabular-nums">{{ acc.account_number }}</td>
+                    <td>{{ acc.customer_name }}</td>
+                    <td>{{ acc.account_type_label }}</td>
+                    <td class="text-end fw-medium tabular-nums">{{ acc.balance_display }}</td>
+                    <td>
+                        {% if acc.status == 'active' %}
+                        <span class="badge bg-success-subtle text-success border border-success-subtle">Hoạt động</span>
+                        {% elif acc.status == 'locked' %}
+                        <span class="badge bg-warning-subtle text-warning border border-warning-subtle">Đã khóa</span>
+                        {% else %}
+                        <span class="badge bg-secondary">Đã đóng</span>
+                        {% endif %}
+                    </td>
+                    <td class="d-none d-md-table-cell text-nowrap tabular-nums">{{ acc.opened_at }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="app-empty-state">
+        <div class="empty-icon"><i class="bi bi-credit-card"></i></div>
+        <h6>Chưa có tài khoản</h6>
+        <p>Mở tài khoản đầu tiên cho khách hàng để bắt đầu giao dịch.</p>
+        <div class="empty-cta">
+            <a href="{{ url_for('banker.accounts_open') }}" class="btn btn-sm btn-success">
+                <i class="bi bi-wallet2 me-1"></i>Mở tài khoản
+            </a>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,85 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Nhật ký kiểm toán — Banking Transaction Management{% endblock %}
+
+{% block page_header %}
+<div class="app-page-header d-flex flex-wrap justify-content-between align-items-start gap-2">
+    <div>
+        <h1>Nhật ký kiểm toán</h1>
+        <p class="page-subtitle">Theo dõi thao tác thay đổi dữ liệu trên hệ thống</p>
+    </div>
+    <span class="badge bg-secondary fs-6">{{ audit_logs | length }} bản ghi</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="card app-card app-data-card">
+    <div class="card-header">
+        <span class="card-header-title">
+            <i class="bi bi-journal-text text-primary"></i>
+            Danh sách nhật ký kiểm toán
+        </span>
+        <span class="card-header-meta">Cập nhật theo thời gian thực (mock)</span>
+    </div>
+
+    <div class="app-table-toolbar">
+        <div class="toolbar-search">
+            <div class="input-group input-group-sm">
+                <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                <input type="search" class="form-control" placeholder="Tìm theo người dùng, hành động, bảng đích..."
+                       disabled aria-label="Tìm kiếm nhật ký (UI demo)">
+            </div>
+        </div>
+        <div class="toolbar-filters">
+            <select class="form-select form-select-sm" disabled aria-label="Lọc loại thao tác (UI demo)">
+                <option selected>Tất cả thao tác</option>
+                <option>INSERT</option>
+                <option>UPDATE</option>
+                <option>DELETE</option>
+            </select>
+            <select class="form-select form-select-sm" disabled aria-label="Lọc thời gian (UI demo)">
+                <option selected>7 ngày gần nhất</option>
+                <option>Hôm nay</option>
+                <option>30 ngày</option>
+                <option>Tùy chọn</option>
+            </select>
+            <span class="toolbar-badge">Bộ lọc demo</span>
+        </div>
+    </div>
+
+    {% if audit_logs %}
+    <div class="table-responsive app-table-scroll">
+        <table class="table table-hover app-table align-middle">
+            <thead>
+                <tr>
+                    <th>Người dùng</th>
+                    <th>Loại thao tác</th>
+                    <th>Bảng đích</th>
+                    <th>ID đích</th>
+                    <th>Mô tả</th>
+                    <th>Thời gian</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in audit_logs %}
+                <tr>
+                    <td class="fw-medium">{{ log.user }}</td>
+                    <td><code class="small">{{ log.action_type }}</code></td>
+                    <td>{{ log.target_table }}</td>
+                    <td class="tabular-nums">{{ log.target_id if log.target_id else '-' }}</td>
+                    <td>{{ log.description }}</td>
+                    <td class="text-nowrap tabular-nums">{{ log.created_at }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="app-empty-state">
+        <div class="empty-icon"><i class="bi bi-journal-x"></i></div>
+        <h6>Chưa có nhật ký kiểm toán</h6>
+        <p>Hệ thống sẽ ghi lại mọi thao tác thay đổi dữ liệu khi có hoạt động từ người dùng.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

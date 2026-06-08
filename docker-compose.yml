@@ -1,0 +1,32 @@
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-CU24-ubuntu-22.04
+    container_name: banking_sqlserver
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD}"
+      MSSQL_PID: "Developer"
+    ports:
+      - "127.0.0.1:11433:1433"
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+      - ./database:/database:ro
+    restart: unless-stopped
+
+  web:
+    build: .
+    container_name: banking_web
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env
+    environment:
+      DB_SERVER: sqlserver
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    volumes:
+      - ./database:/database:ro
+
+volumes:
+  sqlserver_data:

@@ -1,0 +1,87 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Nhật ký đăng nhập — Banking Transaction Management{% endblock %}
+
+{% block page_header %}
+<div class="app-page-header d-flex flex-wrap justify-content-between align-items-start gap-2">
+    <div>
+        <h1>Nhật ký đăng nhập</h1>
+        <p class="page-subtitle">Theo dõi phiên đăng nhập và đăng xuất trên hệ thống</p>
+    </div>
+    <span class="badge bg-secondary fs-6">{{ login_logs | length }} bản ghi</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="card app-card app-data-card">
+    <div class="card-header">
+        <span class="card-header-title">
+            <i class="bi bi-box-arrow-in-right text-primary"></i>
+            Danh sách phiên đăng nhập
+        </span>
+        <span class="card-header-meta">Bao gồm đăng nhập thành công và thất bại</span>
+    </div>
+
+    <div class="app-table-toolbar">
+        <div class="toolbar-search">
+            <div class="input-group input-group-sm">
+                <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                <input type="search" class="form-control" placeholder="Tìm theo tên đăng nhập, địa chỉ IP..."
+                       disabled aria-label="Tìm kiếm phiên đăng nhập (UI demo)">
+            </div>
+        </div>
+        <div class="toolbar-filters">
+            <select class="form-select form-select-sm" disabled aria-label="Lọc trạng thái (UI demo)">
+                <option selected>Tất cả trạng thái</option>
+                <option>Thành công</option>
+                <option>Thất bại</option>
+            </select>
+            <select class="form-select form-select-sm" disabled aria-label="Lọc thời gian (UI demo)">
+                <option selected>7 ngày gần nhất</option>
+                <option>Hôm nay</option>
+                <option>30 ngày</option>
+            </select>
+            <span class="toolbar-badge">Bộ lọc demo</span>
+        </div>
+    </div>
+
+    {% if login_logs %}
+    <div class="table-responsive app-table-scroll">
+        <table class="table table-hover app-table align-middle">
+            <thead>
+                <tr>
+                    <th>Tên đăng nhập</th>
+                    <th>Thời gian đăng nhập</th>
+                    <th>Thời gian đăng xuất</th>
+                    <th>Trạng thái</th>
+                    <th>Địa chỉ IP</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in login_logs %}
+                <tr>
+                    <td class="fw-medium">{{ log.username }}</td>
+                    <td class="text-nowrap tabular-nums">{{ log.login_time }}</td>
+                    <td class="text-nowrap tabular-nums">{{ log.logout_time if log.logout_time else '-' }}</td>
+                    <td>
+                        {% if log.login_status == 'success' %}
+                        <span class="badge bg-success-subtle text-success border border-success-subtle">Thành công</span>
+                        {% else %}
+                        <span class="badge bg-danger-subtle text-danger border border-danger-subtle">Thất bại</span>
+                        {% endif %}
+                    </td>
+                    <td><code class="small tabular-nums">{{ log.ip_address }}</code></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="app-empty-state">
+        <div class="empty-icon"><i class="bi bi-shield-x"></i></div>
+        <h6>Chưa có nhật ký đăng nhập</h6>
+        <p>Lịch sử đăng nhập và đăng xuất sẽ hiển thị tại đây khi có người dùng truy cập hệ thống.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

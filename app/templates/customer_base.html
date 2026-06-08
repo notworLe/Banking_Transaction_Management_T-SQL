@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% set show_sidebar_toggle = true %}
+{% set navbar_home_url = url_for('customer.dashboard') %}
+{% set mock_username = user.username | default('customer', true) %}
+{% set role_chip_label = 'Khách hàng' %}
+
+{% block body_class %}app-page{% endblock %}
+{% block body_attrs %}data-role="customer"{% endblock %}
+
+{% block layout %}
+<div class="app-shell">
+    <aside class="app-sidebar app-sidebar--customer d-none d-lg-flex">
+        <div class="app-sidebar-header">
+            <div class="role-label">Vai trò</div>
+            <div class="role-title">Khách hàng</div>
+        </div>
+        {% set sidebar_sections = [
+            {
+                'label': 'Tổng quan',
+                'links': [
+                    {'label': 'Bảng điều khiển', 'icon': 'speedometer2', 'url': url_for('customer.dashboard'), 'endpoint': 'customer.dashboard'},
+                ]
+            },
+            {
+                'label': 'Tài khoản',
+                'links': [
+                    {'label': 'Danh sách tài khoản', 'icon': 'credit-card', 'url': url_for('customer.accounts'), 'endpoint': 'customer.accounts'},
+                    {'label': 'Lịch sử giao dịch', 'icon': 'receipt', 'url': url_for('customer.transactions'), 'endpoint': 'customer.transactions'},
+                    {'label': 'Chuyển khoản', 'icon': 'send', 'url': url_for('customer.transfer'), 'endpoint': 'customer.transfer'},
+                ]
+            }
+        ] %}
+        {% include "partials/sidebar_nav.html" %}
+    </aside>
+
+    <div class="offcanvas offcanvas-start app-sidebar-offcanvas app-sidebar-offcanvas--customer d-lg-none" tabindex="-1"
+         id="appSidebarOffcanvas" aria-labelledby="appSidebarOffcanvasLabel">
+        <div class="offcanvas-sidebar-header">
+            <div>
+                <div class="role-label">Vai trò</div>
+                <h5 class="role-title" id="appSidebarOffcanvasLabel">Khách hàng</h5>
+            </div>
+            <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Đóng"></button>
+        </div>
+        <div class="offcanvas-body p-0">
+            {% include "partials/sidebar_nav.html" %}
+        </div>
+    </div>
+
+    <div class="app-content">
+        <div class="app-content-inner">
+            {% block page_header %}{% endblock %}
+            {% block content %}{% endblock %}
+        </div>
+    </div>
+</div>
+{% endblock %}

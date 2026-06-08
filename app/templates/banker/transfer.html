@@ -1,0 +1,86 @@
+{% extends "banker_base.html" %}
+
+{% block title %}Chuyển khoản — Banking Transaction Management{% endblock %}
+
+{% block page_header %}
+<div class="app-page-header">
+    <h1>Chuyển khoản</h1>
+    <p class="page-subtitle">Chuyển tiền giữa các tài khoản hộ khách hàng</p>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card app-card app-tx-form app-tx-form--transfer">
+            <div class="card-header app-tx-form-header">
+                <span class="tx-header-icon"><i class="bi bi-arrow-left-right"></i></span>
+                <div>
+                    <div>Giao dịch chuyển khoản</div>
+                    <small class="text-muted fw-normal">Chuyển tiền nội bộ giữa hai tài khoản</small>
+                </div>
+            </div>
+            <div class="card-body p-4">
+                <div class="app-review-box app-review-box--primary" role="note">
+                    <i class="bi bi-info-circle"></i>
+                    <div>
+                        <strong>Thao tác giao dịch quan trọng.</strong>
+                        Đối chiếu tài khoản nguồn, tài khoản đích và số tiền trước khi xác nhận.
+                        Hệ thống sẽ ghi nhận đồng thời bút toán ghi nợ và ghi có.
+                    </div>
+                </div>
+
+                <form method="POST" action="{{ url_for('banker.transfer') }}" novalidate>
+                    <fieldset class="app-form-section">
+                        <legend>Thông tin tài khoản</legend>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label for="from_account_number" class="form-label">Tài khoản nguồn <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control tabular-nums" id="from_account_number" name="from_account_number"
+                                       value="{{ form_data.from_account_number }}" placeholder="Tài khoản chuyển đi">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="to_account_number" class="form-label">Tài khoản đích <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control tabular-nums" id="to_account_number" name="to_account_number"
+                                       value="{{ form_data.to_account_number }}" placeholder="Tài khoản nhận">
+                            </div>
+                        </div>
+                        <div class="form-text mt-2">Hai tài khoản phải khác nhau và đang ở trạng thái hoạt động.</div>
+                    </fieldset>
+
+                    <fieldset class="app-form-section">
+                        <legend>Thông tin giao dịch</legend>
+                        <div class="mb-0">
+                            <label for="amount" class="form-label">Số tiền chuyển <span class="text-danger">*</span></label>
+                            <div class="input-group">
+                                <input type="number" class="form-control app-amount-input tabular-nums" id="amount" name="amount"
+                                       value="{{ form_data.amount }}" min="1" step="1000" placeholder="0">
+                                <span class="input-group-text">VNĐ</span>
+                            </div>
+                            <div class="form-text">Số tiền tối thiểu 1.000 VNĐ, bước nhảy 1.000 VNĐ.</div>
+                        </div>
+                    </fieldset>
+
+                    <fieldset class="app-form-section">
+                        <legend>Ghi chú</legend>
+                        <div class="mb-0">
+                            <label for="description" class="form-label">Nội dung chuyển khoản</label>
+                            <textarea class="form-control" id="description" name="description" rows="2"
+                                      placeholder="Nội dung hiển thị trên sao kê">{{ form_data.description }}</textarea>
+                        </div>
+                    </fieldset>
+
+                    <div class="d-flex flex-wrap gap-2 pt-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-arrow-left-right me-1"></i>Xác nhận chuyển khoản
+                        </button>
+                        <a href="{{ url_for('banker.transactions') }}" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-left me-1"></i>Quay lại danh sách
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

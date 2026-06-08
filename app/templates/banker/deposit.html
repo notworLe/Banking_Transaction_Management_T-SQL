@@ -1,0 +1,79 @@
+{% extends "banker_base.html" %}
+
+{% block title %}Nạp tiền — Banking Transaction Management{% endblock %}
+
+{% block page_header %}
+<div class="app-page-header">
+    <h1>Nạp tiền</h1>
+    <p class="page-subtitle">Ghi có số tiền vào tài khoản khách hàng tại quầy</p>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card app-card app-tx-form app-tx-form--deposit">
+            <div class="card-header app-tx-form-header">
+                <span class="tx-header-icon"><i class="bi bi-plus-circle"></i></span>
+                <div>
+                    <div>Giao dịch nạp tiền</div>
+                    <small class="text-muted fw-normal">Ghi có vào tài khoản khách hàng</small>
+                </div>
+            </div>
+            <div class="card-body p-4">
+                <div class="app-review-box app-review-box--credit" role="note">
+                    <i class="bi bi-shield-check"></i>
+                    <div>
+                        <strong>Thao tác giao dịch quan trọng.</strong>
+                        Vui lòng đối chiếu số tài khoản và số tiền trước khi xác nhận.
+                        Giao dịch sẽ được ghi nhận vào sổ và nhật ký hệ thống.
+                    </div>
+                </div>
+
+                <form method="POST" action="{{ url_for('banker.deposit') }}" novalidate>
+                    <fieldset class="app-form-section">
+                        <legend>Thông tin tài khoản</legend>
+                        <div class="mb-0">
+                            <label for="account_number" class="form-label">Số tài khoản <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control tabular-nums" id="account_number" name="account_number"
+                                   value="{{ form_data.account_number }}" placeholder="VD: ACC-10021">
+                            <div class="form-text">Nhập số tài khoản cần nạp tiền.</div>
+                        </div>
+                    </fieldset>
+
+                    <fieldset class="app-form-section">
+                        <legend>Thông tin giao dịch</legend>
+                        <div class="mb-0">
+                            <label for="amount" class="form-label">Số tiền nạp <span class="text-danger">*</span></label>
+                            <div class="input-group">
+                                <input type="number" class="form-control app-amount-input tabular-nums text-credit" id="amount" name="amount"
+                                       value="{{ form_data.amount }}" min="1" step="1000" placeholder="0">
+                                <span class="input-group-text">VNĐ</span>
+                            </div>
+                            <div class="form-text">Số tiền tối thiểu 1.000 VNĐ, bước nhảy 1.000 VNĐ.</div>
+                        </div>
+                    </fieldset>
+
+                    <fieldset class="app-form-section">
+                        <legend>Ghi chú</legend>
+                        <div class="mb-0">
+                            <label for="description" class="form-label">Nội dung giao dịch</label>
+                            <textarea class="form-control" id="description" name="description" rows="2"
+                                      placeholder="Ghi chú nội bộ hoặc lý do nạp tiền">{{ form_data.description }}</textarea>
+                        </div>
+                    </fieldset>
+
+                    <div class="d-flex flex-wrap gap-2 pt-2">
+                        <button type="submit" class="btn btn-success">
+                            <i class="bi bi-plus-circle me-1"></i>Xác nhận nạp tiền
+                        </button>
+                        <a href="{{ url_for('banker.transactions') }}" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-left me-1"></i>Quay lại danh sách
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

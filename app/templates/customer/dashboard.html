@@ -1,0 +1,121 @@
+{% extends "customer_base.html" %}
+
+{% block title %}{{ dashboard.title }} — Banking Transaction Management{% endblock %}
+
+{% block page_header %}
+<div class="app-page-header">
+    <h1>{{ dashboard.title }}</h1>
+    <p class="page-subtitle">Xin chào, <strong>{{ dashboard.customer_name }}</strong> — tổng quan tài khoản và giao dịch của bạn</p>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row g-3 mb-4">
+    {% for stat in dashboard.stats %}
+    <div class="col-sm-6 col-xl-3">
+        <div class="card stat-card h-100">
+            <div class="card-body d-flex align-items-center gap-3">
+                <div class="stat-icon">
+                    <i class="bi bi-{{ stat.icon }}"></i>
+                </div>
+                <div class="min-w-0">
+                    <p class="text-muted small mb-1">{{ stat.label }}</p>
+                    <p class="stat-value mb-0 tabular-nums">{{ stat.value }}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-5">
+        <div class="card app-card app-data-card h-100">
+            <div class="card-header">
+                <span class="card-header-title">
+                    <i class="bi bi-wallet2 text-primary"></i>
+                    Tài khoản của tôi
+                </span>
+                <a href="{{ url_for('customer.accounts') }}" class="btn btn-sm btn-outline-primary">Xem tất cả</a>
+            </div>
+
+            {% if dashboard.accounts %}
+            <div class="list-group list-group-flush">
+                {% for acc in dashboard.accounts %}
+                <div class="list-group-item px-3 py-3 app-account-list-item">
+                    <div class="d-flex justify-content-between align-items-start gap-2">
+                        <div class="min-w-0">
+                            <h6 class="mb-1 tabular-nums">{{ acc.account_number }}</h6>
+                            <small class="text-muted">{{ acc.account_type }}</small>
+                        </div>
+                        <span class="badge bg-success-subtle text-success border border-success-subtle">{{ acc.status }}</span>
+                    </div>
+                    <p class="mb-0 mt-2 fw-semibold tabular-nums">{{ acc.balance }}</p>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="app-empty-state py-4">
+                <div class="empty-icon"><i class="bi bi-wallet2"></i></div>
+                <h6>Chưa có tài khoản</h6>
+                <p>Liên hệ quầy giao dịch để mở tài khoản mới.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="col-lg-7">
+        <div class="card app-card app-data-card h-100">
+            <div class="card-header">
+                <span class="card-header-title">
+                    <i class="bi bi-receipt text-primary"></i>
+                    Giao dịch gần đây
+                </span>
+                <a href="{{ url_for('customer.transactions') }}" class="btn btn-sm btn-outline-primary">Xem tất cả</a>
+            </div>
+
+            {% if dashboard.recent_transactions %}
+            <div class="table-responsive app-table-scroll">
+                <table class="table table-hover app-table align-middle">
+                    <thead>
+                        <tr>
+                            <th>Thời gian</th>
+                            <th>Loại</th>
+                            <th class="d-none d-md-table-cell">Mô tả</th>
+                            <th class="text-end">Số tiền</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for tx in dashboard.recent_transactions %}
+                        <tr>
+                            <td class="text-nowrap tabular-nums">{{ tx.time }}</td>
+                            <td>
+                                {% if tx.type == 'Nạp tiền' %}
+                                <span class="badge bg-success-subtle text-success border border-success-subtle">Nạp tiền</span>
+                                {% elif tx.type == 'Rút tiền' %}
+                                <span class="badge bg-danger-subtle text-danger border border-danger-subtle">Rút tiền</span>
+                                {% else %}
+                                <span class="badge bg-primary-subtle text-primary border border-primary-subtle">{{ tx.type }}</span>
+                                {% endif %}
+                            </td>
+                            <td class="d-none d-md-table-cell">{{ tx.description }}</td>
+                            <td class="text-end fw-medium tabular-nums {% if tx.amount.startswith('+') %}text-credit{% elif tx.amount.startswith('-') %}text-debit{% endif %}">{{ tx.amount }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="app-empty-state py-4">
+                <div class="empty-icon"><i class="bi bi-receipt"></i></div>
+                <h6>Chưa có giao dịch</h6>
+                <p>Lịch sử giao dịch trên tài khoản của bạn sẽ hiển thị tại đây.</p>
+                <div class="empty-cta">
+                    <a href="{{ url_for('customer.transfer') }}" class="btn btn-sm btn-primary">Chuyển khoản</a>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

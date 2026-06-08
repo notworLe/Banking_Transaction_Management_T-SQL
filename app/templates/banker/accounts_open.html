@@ -1,0 +1,58 @@
+{% extends "banker_base.html" %}
+
+{% block title %}Mở tài khoản — Banking Transaction Management{% endblock %}
+
+{% block page_header %}
+<div class="app-page-header">
+    <h1>Mở tài khoản ngân hàng</h1>
+    <p class="page-subtitle">UC-BANKER-04 — Mở tài khoản cho khách hàng</p>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-7">
+        <div class="card app-card">
+            <div class="card-body p-4">
+                <form method="POST" action="{{ url_for('banker.accounts_open') }}" novalidate>
+                    <div class="mb-3">
+                        <label for="customer_id" class="form-label">Customer <span class="text-danger">*</span></label>
+                        <select class="form-select" id="customer_id" name="customer_id">
+                            <option value="">— Chọn khách hàng —</option>
+                            {% for c in customers %}
+                            <option value="{{ c.id }}" {% if form_data.customer_id == c.id|string %}selected{% endif %}>
+                                {{ c.label }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="account_type" class="form-label">AccountType <span class="text-danger">*</span></label>
+                        <select class="form-select" id="account_type" name="account_type">
+                            {% for t in account_types %}
+                            <option value="{{ t.value }}" {% if form_data.account_type == t.value %}selected{% endif %}>
+                                {{ t.label }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="initial_balance" class="form-label">InitialBalance</label>
+                        <input type="number" class="form-control" id="initial_balance" name="initial_balance"
+                               value="{{ form_data.initial_balance }}" min="0" step="1000"
+                               placeholder="Số dư ban đầu (VNĐ)">
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-success">
+                            <i class="bi bi-wallet2 me-1"></i>Mở tài khoản
+                        </button>
+                        <a href="{{ url_for('banker.accounts') }}" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-left me-1"></i>Quay lại
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

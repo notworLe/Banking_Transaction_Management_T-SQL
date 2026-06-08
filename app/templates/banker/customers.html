@@ -1,0 +1,85 @@
+{% extends "banker_base.html" %}
+
+{% block title %}Danh sách khách hàng — Banking Transaction Management{% endblock %}
+
+{% block page_header %}
+<div class="app-page-header d-flex flex-wrap justify-content-between align-items-start gap-2">
+    <div>
+        <h1>Danh sách khách hàng</h1>
+        <p class="page-subtitle">Tra cứu và quản lý thông tin khách hàng ngân hàng</p>
+    </div>
+    <a href="{{ url_for('banker.customers_new') }}" class="btn btn-success">
+        <i class="bi bi-person-plus me-1"></i>Tạo khách hàng
+    </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="card app-card app-data-card">
+    <div class="card-header">
+        <span class="card-header-title">
+            <i class="bi bi-person-lines-fill text-primary"></i>
+            Danh sách khách hàng
+        </span>
+        <span class="card-header-meta">{{ customers | length }} khách hàng</span>
+    </div>
+
+    <div class="app-table-toolbar">
+        <div class="toolbar-search">
+            <div class="input-group input-group-sm">
+                <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                <input type="search" class="form-control" placeholder="Tìm theo tên, email, số điện thoại..."
+                       disabled aria-label="Tìm kiếm khách hàng (UI demo)">
+            </div>
+        </div>
+        <div class="toolbar-filters">
+            <select class="form-select form-select-sm" disabled aria-label="Lọc thời gian (UI demo)">
+                <option selected>Tất cả thời gian</option>
+                <option>30 ngày gần nhất</option>
+                <option>Năm nay</option>
+            </select>
+            <span class="toolbar-badge">Bộ lọc demo</span>
+        </div>
+    </div>
+
+    {% if customers %}
+    <div class="table-responsive app-table-scroll">
+        <table class="table table-hover app-table align-middle">
+            <thead>
+                <tr>
+                    <th>Họ và tên</th>
+                    <th>Email</th>
+                    <th class="d-none d-lg-table-cell">Số điện thoại</th>
+                    <th class="d-none d-xl-table-cell">Địa chỉ</th>
+                    <th>Tên đăng nhập</th>
+                    <th>Ngày tạo</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for c in customers %}
+                <tr>
+                    <td class="fw-medium">{{ c.full_name }}</td>
+                    <td>{{ c.email }}</td>
+                    <td class="d-none d-lg-table-cell tabular-nums">{{ c.phone_number }}</td>
+                    <td class="d-none d-xl-table-cell">{{ c.address }}</td>
+                    <td>{{ c.username }}</td>
+                    <td class="text-nowrap tabular-nums">{{ c.created_at }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="app-empty-state">
+        <div class="empty-icon"><i class="bi bi-person-x"></i></div>
+        <h6>Chưa có khách hàng</h6>
+        <p>Bắt đầu bằng cách đăng ký khách hàng mới cho hệ thống.</p>
+        <div class="empty-cta">
+            <a href="{{ url_for('banker.customers_new') }}" class="btn btn-sm btn-success">
+                <i class="bi bi-person-plus me-1"></i>Tạo khách hàng
+            </a>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

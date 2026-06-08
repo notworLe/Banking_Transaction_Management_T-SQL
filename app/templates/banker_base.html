@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% set show_sidebar_toggle = true %}
+{% set navbar_home_url = url_for('banker.dashboard') %}
+{% set mock_username = user.username | default('banker', true) %}
+{% set role_chip_label = 'Giao dịch viên' %}
+
+{% block body_class %}app-page{% endblock %}
+{% block body_attrs %}data-role="banker"{% endblock %}
+
+{% block layout %}
+<div class="app-shell">
+    <aside class="app-sidebar app-sidebar--banker d-none d-lg-flex">
+        <div class="app-sidebar-header">
+            <div class="role-label">Vai trò</div>
+            <div class="role-title">Nhân viên ngân hàng</div>
+        </div>
+        {% set sidebar_sections = [
+            {
+                'label': 'Tổng quan',
+                'links': [
+                    {'label': 'Bảng điều khiển', 'icon': 'speedometer2', 'url': url_for('banker.dashboard'), 'endpoint': 'banker.dashboard'},
+                ]
+            },
+            {
+                'label': 'Khách hàng & Tài khoản',
+                'links': [
+                    {'label': 'Danh sách khách hàng', 'icon': 'person-lines-fill', 'url': url_for('banker.customers'), 'endpoint': 'banker.customers'},
+                    {'label': 'Tạo khách hàng', 'icon': 'person-plus', 'url': url_for('banker.customers_new'), 'endpoint': 'banker.customers_new'},
+                    {'label': 'Danh sách tài khoản', 'icon': 'credit-card', 'url': url_for('banker.accounts'), 'endpoint': 'banker.accounts'},
+                    {'label': 'Mở tài khoản', 'icon': 'wallet2', 'url': url_for('banker.accounts_open'), 'endpoint': 'banker.accounts_open'},
+                ]
+            },
+            {
+                'label': 'Giao dịch',
+                'links': [
+                    {'label': 'Lịch sử giao dịch', 'icon': 'clock-history', 'url': url_for('banker.transactions'), 'endpoint': 'banker.transactions'},
+                    {'label': 'Nạp tiền', 'icon': 'plus-circle', 'url': url_for('banker.deposit'), 'endpoint': 'banker.deposit'},
+                    {'label': 'Rút tiền', 'icon': 'dash-circle', 'url': url_for('banker.withdraw'), 'endpoint': 'banker.withdraw'},
+                    {'label': 'Chuyển khoản', 'icon': 'arrow-left-right', 'url': url_for('banker.transfer'), 'endpoint': 'banker.transfer'},
+                ]
+            }
+        ] %}
+        {% include "partials/sidebar_nav.html" %}
+    </aside>
+
+    <div class="offcanvas offcanvas-start app-sidebar-offcanvas app-sidebar-offcanvas--banker d-lg-none" tabindex="-1"
+         id="appSidebarOffcanvas" aria-labelledby="appSidebarOffcanvasLabel">
+        <div class="offcanvas-sidebar-header">
+            <div>
+                <div class="role-label">Vai trò</div>
+                <h5 class="role-title" id="appSidebarOffcanvasLabel">Nhân viên ngân hàng</h5>
+            </div>
+            <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Đóng"></button>
+        </div>
+        <div class="offcanvas-body p-0">
+            {% include "partials/sidebar_nav.html" %}
+        </div>
+    </div>
+
+    <div class="app-content">
+        <div class="app-content-inner">
+            {% block page_header %}{% endblock %}
+            {% block content %}{% endblock %}
+        </div>
+    </div>
+</div>
+{% endblock %}

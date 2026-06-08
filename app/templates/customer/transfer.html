@@ -1,0 +1,61 @@
+{% extends "customer_base.html" %}
+
+{% block title %}Chuyển khoản — Banking Transaction Management{% endblock %}
+
+{% block page_header %}
+<div class="app-page-header">
+    <h1>Chuyển khoản</h1>
+    <p class="page-subtitle">UC-CUSTOMER-05 — Chuyển tiền giữa các tài khoản</p>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-7">
+        <div class="card app-card">
+            <div class="card-body p-4">
+                <form method="POST" action="{{ url_for('customer.transfer') }}" novalidate>
+                    <div class="mb-3">
+                        <label for="from_account_number" class="form-label">FromAccountNumber <span class="text-danger">*</span></label>
+                        {% if owned_accounts %}
+                        <select class="form-select" id="from_account_number" name="from_account_number">
+                            {% for acc in owned_accounts %}
+                            <option value="{{ acc }}" {% if form_data.from_account_number == acc %}selected{% endif %}>
+                                {{ acc }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        {% else %}
+                        <input type="text" class="form-control" id="from_account_number" name="from_account_number"
+                               value="{{ form_data.from_account_number }}" placeholder="Tài khoản nguồn">
+                        {% endif %}
+                    </div>
+                    <div class="mb-3">
+                        <label for="to_account_number" class="form-label">ToAccountNumber <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="to_account_number" name="to_account_number"
+                               value="{{ form_data.to_account_number }}" placeholder="Tài khoản đích">
+                    </div>
+                    <div class="mb-3">
+                        <label for="amount" class="form-label">Amount <span class="text-danger">*</span></label>
+                        <input type="number" class="form-control" id="amount" name="amount"
+                               value="{{ form_data.amount }}" min="1" step="1000" placeholder="Số tiền (VNĐ)">
+                    </div>
+                    <div class="mb-3">
+                        <label for="description" class="form-label">Description</label>
+                        <textarea class="form-control" id="description" name="description" rows="2"
+                                  placeholder="Nội dung chuyển khoản">{{ form_data.description }}</textarea>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-info text-white">
+                            <i class="bi bi-send me-1"></i>Chuyển khoản
+                        </button>
+                        <a href="{{ url_for('customer.transactions') }}" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-left me-1"></i>Quay lại
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

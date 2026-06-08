@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% set show_sidebar_toggle = true %}
+{% set navbar_home_url = url_for('admin.dashboard') %}
+{% set mock_username = user.username | default('admin', true) %}
+{% set role_chip_label = 'Quản trị' %}
+
+{% block body_class %}app-page{% endblock %}
+{% block body_attrs %}data-role="admin"{% endblock %}
+
+{% block layout %}
+<div class="app-shell">
+    <aside class="app-sidebar app-sidebar--admin d-none d-lg-flex">
+        <div class="app-sidebar-header">
+            <div class="role-label">Vai trò</div>
+            <div class="role-title">Quản trị viên</div>
+        </div>
+        {% set sidebar_sections = [
+            {
+                'label': 'Tổng quan',
+                'links': [
+                    {'label': 'Bảng điều khiển', 'icon': 'speedometer2', 'url': url_for('admin.dashboard'), 'endpoint': 'admin.dashboard'},
+                ]
+            },
+            {
+                'label': 'Quản lý hệ thống',
+                'links': [
+                    {'label': 'Danh sách người dùng', 'icon': 'people', 'url': url_for('admin.users'), 'endpoint': 'admin.users'},
+                    {'label': 'Nhật ký kiểm toán', 'icon': 'journal-text', 'url': url_for('admin.audit_logs'), 'endpoint': 'admin.audit_logs'},
+                    {'label': 'Nhật ký đăng nhập', 'icon': 'box-arrow-in-right', 'url': url_for('admin.login_logs'), 'endpoint': 'admin.login_logs'},
+                ]
+            }
+        ] %}
+        {% include "partials/sidebar_nav.html" %}
+    </aside>
+
+    <div class="offcanvas offcanvas-start app-sidebar-offcanvas app-sidebar-offcanvas--admin d-lg-none" tabindex="-1"
+         id="appSidebarOffcanvas" aria-labelledby="appSidebarOffcanvasLabel">
+        <div class="offcanvas-sidebar-header">
+            <div>
+                <div class="role-label">Vai trò</div>
+                <h5 class="role-title" id="appSidebarOffcanvasLabel">Quản trị viên</h5>
+            </div>
+            <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Đóng"></button>
+        </div>
+        <div class="offcanvas-body p-0">
+            {% include "partials/sidebar_nav.html" %}
+        </div>
+    </div>
+
+    <div class="app-content">
+        <div class="app-content-inner">
+            {% block page_header %}{% endblock %}
+            {% block content %}{% endblock %}
+        </div>
+    </div>
+</div>
+{% endblock %}

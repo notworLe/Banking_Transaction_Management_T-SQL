@@ -1,0 +1,101 @@
+{% extends "customer_base.html" %}
+
+{% block title %}Lịch sử giao dịch — Banking Transaction Management{% endblock %}
+
+{% block page_header %}
+<div class="app-page-header d-flex flex-wrap justify-content-between align-items-start gap-2">
+    <div>
+        <h1>Lịch sử giao dịch</h1>
+        <p class="page-subtitle">Theo dõi giao dịch trên các tài khoản của bạn</p>
+    </div>
+    <a href="{{ url_for('customer.transfer') }}" class="btn btn-primary">
+        <i class="bi bi-send me-1"></i>Chuyển khoản
+    </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="card app-card app-data-card">
+    <div class="card-header">
+        <span class="card-header-title">
+            <i class="bi bi-receipt text-primary"></i>
+            Danh sách giao dịch
+        </span>
+        <span class="card-header-meta">{{ transactions | length }} giao dịch</span>
+    </div>
+
+    <div class="app-table-toolbar">
+        <div class="toolbar-search">
+            <div class="input-group input-group-sm">
+                <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                <input type="search" class="form-control" placeholder="Tìm theo mã giao dịch, nội dung..."
+                       disabled aria-label="Tìm kiếm giao dịch (UI demo)">
+            </div>
+        </div>
+        <div class="toolbar-filters">
+            <select class="form-select form-select-sm" disabled aria-label="Lọc loại giao dịch (UI demo)">
+                <option selected>Tất cả loại</option>
+                <option>Nạp tiền</option>
+                <option>Rút tiền</option>
+                <option>Chuyển khoản</option>
+            </select>
+            <select class="form-select form-select-sm" disabled aria-label="Lọc thời gian (UI demo)">
+                <option selected>30 ngày gần nhất</option>
+                <option>7 ngày</option>
+                <option>Tháng này</option>
+            </select>
+            <span class="toolbar-badge">Bộ lọc demo</span>
+        </div>
+    </div>
+
+    {% if transactions %}
+    <div class="table-responsive app-table-scroll">
+        <table class="table table-hover app-table align-middle">
+            <thead>
+                <tr>
+                    <th class="d-none d-lg-table-cell">Mã GD</th>
+                    <th>Loại</th>
+                    <th class="d-none d-md-table-cell">Từ TK</th>
+                    <th class="d-none d-md-table-cell">Đến TK</th>
+                    <th class="text-end">Số tiền</th>
+                    <th class="d-none d-xl-table-cell">Nội dung</th>
+                    <th class="d-none d-md-table-cell">Thời gian</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for tx in transactions %}
+                <tr>
+                    <td class="d-none d-lg-table-cell"><code class="small tabular-nums">{{ tx.id }}</code></td>
+                    <td>
+                        {% if tx.transaction_type == 'deposit' %}
+                        <span class="badge bg-success-subtle text-success border border-success-subtle">{{ tx.transaction_type_label }}</span>
+                        {% elif tx.transaction_type == 'withdraw' %}
+                        <span class="badge bg-danger-subtle text-danger border border-danger-subtle">{{ tx.transaction_type_label }}</span>
+                        {% else %}
+                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle">{{ tx.transaction_type_label }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="d-none d-md-table-cell tabular-nums">{{ tx.from_account or '-' }}</td>
+                    <td class="d-none d-md-table-cell tabular-nums">{{ tx.to_account or '-' }}</td>
+                    <td class="text-end fw-medium tabular-nums {% if tx.amount_display.startswith('+') %}text-credit{% elif tx.amount_display.startswith('-') %}text-debit{% endif %}">{{ tx.amount_display }}</td>
+                    <td class="d-none d-xl-table-cell">{{ tx.description }}</td>
+                    <td class="d-none d-md-table-cell text-nowrap tabular-nums">{{ tx.created_at }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="app-empty-state">
+        <div class="empty-icon"><i class="bi bi-receipt"></i></div>
+        <h6>Chưa có giao dịch</h6>
+        <p>Lịch sử nạp, rút và chuyển khoản sẽ hiển thị tại đây.</p>
+        <div class="empty-cta">
+            <a href="{{ url_for('customer.transfer') }}" class="btn btn-sm btn-primary">
+                <i class="bi bi-send me-1"></i>Chuyển khoản
+            </a>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

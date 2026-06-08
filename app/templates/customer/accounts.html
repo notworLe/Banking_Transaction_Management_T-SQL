@@ -1,0 +1,61 @@
+{% extends "customer_base.html" %}
+
+{% block title %}Tài khoản của tôi — Banking Transaction Management{% endblock %}
+
+{% block page_header %}
+<div class="app-page-header">
+    <h1>Danh sách tài khoản</h1>
+    <p class="page-subtitle">Tài khoản ngân hàng của <strong>{{ customer_name }}</strong></p>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="card app-card app-data-card">
+    <div class="card-header">
+        <span class="card-header-title">
+            <i class="bi bi-credit-card text-primary"></i>
+            Tài khoản ngân hàng
+        </span>
+        <span class="card-header-meta">{{ accounts | length }} tài khoản</span>
+    </div>
+
+    {% if accounts %}
+    <div class="table-responsive app-table-scroll">
+        <table class="table table-hover app-table align-middle">
+            <thead>
+                <tr>
+                    <th>Số tài khoản</th>
+                    <th>Loại tài khoản</th>
+                    <th class="text-end">Số dư</th>
+                    <th>Trạng thái</th>
+                    <th class="d-none d-md-table-cell">Ngày mở</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for acc in accounts %}
+                <tr>
+                    <td class="fw-medium tabular-nums">{{ acc.account_number }}</td>
+                    <td>{{ acc.account_type_label }}</td>
+                    <td class="text-end fw-medium tabular-nums">{{ acc.balance_display }}</td>
+                    <td>
+                        {% if acc.status == 'active' %}
+                        <span class="badge bg-success-subtle text-success border border-success-subtle">Hoạt động</span>
+                        {% else %}
+                        <span class="badge bg-warning-subtle text-warning border border-warning-subtle">Đã khóa</span>
+                        {% endif %}
+                    </td>
+                    <td class="d-none d-md-table-cell text-nowrap tabular-nums">{{ acc.opened_at }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="app-empty-state">
+        <div class="empty-icon"><i class="bi bi-wallet2"></i></div>
+        <h6>Bạn chưa có tài khoản nào</h6>
+        <p>Vui lòng liên hệ quầy giao dịch để mở tài khoản ngân hàng.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
