@@ -9,6 +9,10 @@ Hệ thống quản lý giao dịch ngân hàng — đồ án môn Hệ quản t
 - SQL Server + pyodbc
 - Docker + Docker Compose
 
+### Database
+
+database diagram
+
 ## Cấu trúc thư mục
 
 ```
@@ -33,12 +37,14 @@ docker-compose.yml
 
 ## Hệ thống layout Jinja
 
-| Template | Mô tả |
-|----------|-------|
-| `base.html` | Layout gốc: Bootstrap 5, navbar, blocks `title` / `content` / `scripts` |
-| `admin_base.html` | Kế thừa `base.html`, sidebar Quản trị viên |
-| `banker_base.html` | Kế thừa `base.html`, sidebar Nhân viên ngân hàng |
-| `customer_base.html` | Kế thừa `base.html`, sidebar Khách hàng |
+
+| Template             | Mô tả                                                                   |
+| -------------------- | ----------------------------------------------------------------------- |
+| `base.html`          | Layout gốc: Bootstrap 5, navbar, blocks `title` / `content` / `scripts` |
+| `admin_base.html`    | Kế thừa `base.html`, sidebar Quản trị viên                              |
+| `banker_base.html`   | Kế thừa `base.html`, sidebar Nhân viên ngân hàng                        |
+| `customer_base.html` | Kế thừa `base.html`, sidebar Khách hàng                                 |
+
 
 Màn hình mới theo vai trò nên `{% extends "admin_base.html" %}` (hoặc `banker_base` / `customer_base`) và override block `content`.
 
@@ -73,21 +79,25 @@ docker compose up --build
 
 **VS Code / SQLTools / Azure Data Studio:**
 
-| Thuộc tính | Giá trị |
-|------------|---------|
-| Server | `127.0.0.1,11433` |
-| User | `sa` |
-| Password | `Banking@123456` (hoặc giá trị `MSSQL_SA_PASSWORD` trong `.env`) |
-| Database | `master` hoặc `BankingTransactionDB` |
-| Encrypt | `False` |
-| Trust Server Certificate | `True` |
+
+| Thuộc tính               | Giá trị                                                          |
+| ------------------------ | ---------------------------------------------------------------- |
+| Server                   | `127.0.0.1,11433`                                                |
+| User                     | `sa`                                                             |
+| Password                 | `Banking@123456` (hoặc giá trị `MSSQL_SA_PASSWORD` trong `.env`) |
+| Database                 | `master` hoặc `BankingTransactionDB`                             |
+| Encrypt                  | `False`                                                          |
+| Trust Server Certificate | `True`                                                           |
+
 
 **Flask container** (kết nối nội bộ Docker network — đã cấu hình trong `docker-compose.yml`):
 
-| Biến | Giá trị |
-|------|---------|
+
+| Biến        | Giá trị     |
+| ----------- | ----------- |
 | `DB_SERVER` | `sqlserver` |
-| `DB_PORT` | `1433` |
+| `DB_PORT`   | `1433`      |
+
 
 Chạy nền:
 
@@ -241,21 +251,25 @@ Mở trình duyệt: [http://127.0.0.1:5000](http://127.0.0.1:5000)
 
 ### Tài khoản demo (mock)
 
-| Vai trò     | Tên đăng nhập | Mật khẩu    | Dashboard              |
-|-------------|---------------|-------------|------------------------|
-| Quản trị    | admin         | admin123    | `/admin/dashboard`     |
-| Nhân viên   | banker        | banker123   | `/banker/dashboard`    |
-| Khách hàng  | customer      | customer123 | `/customer/dashboard`  |
+
+| Vai trò    | Tên đăng nhập | Mật khẩu    | Dashboard             |
+| ---------- | ------------- | ----------- | --------------------- |
+| Quản trị   | admin         | admin123    | `/admin/dashboard`    |
+| Nhân viên  | banker        | banker123   | `/banker/dashboard`   |
+| Khách hàng | customer      | customer123 | `/customer/dashboard` |
+
 
 ## Routes hiện có
 
-| Route                  | Mô tả                    |
-|------------------------|--------------------------|
-| `/login`               | Đăng nhập                |
-| `/logout`              | Đăng xuất                |
-| `/admin/dashboard`     | Dashboard quản trị viên  |
-| `/banker/dashboard`    | Dashboard nhân viên      |
-| `/customer/dashboard`  | Dashboard khách hàng     |
+
+| Route                 | Mô tả                   |
+| --------------------- | ----------------------- |
+| `/login`              | Đăng nhập               |
+| `/logout`             | Đăng xuất               |
+| `/admin/dashboard`    | Dashboard quản trị viên |
+| `/banker/dashboard`   | Dashboard nhân viên     |
+| `/customer/dashboard` | Dashboard khách hàng    |
+
 
 ## Tài liệu
 

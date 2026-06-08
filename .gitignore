@@ -118,10 +118,6 @@ ipython_config.py
 .pdm-build/
 
 
-.cursor/
-.agents/
-skills-lock.json
-
 # pixi
 #   Similar to Pipfile.lock, it is generally recommended to include pixi.lock in version control.
 # pixi.lock
@@ -221,3 +217,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+.cursor/
+.agents/
+skills-lock.json
