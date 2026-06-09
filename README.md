@@ -12,6 +12,6 @@
 2. Installing **Docker Desktop**  
 3. Seed sample data  
 Run the following SQL file to populate the database with sample data.  
-Click on `sample_database.sql`, execute this file.
+Click on `init.sql`, execute this file.
 4. 
 
