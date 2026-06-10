@@ -12,8 +12,27 @@ services:
       - "1433:1433"
     volumes:
       - sqlserver_data:/var/opt/mssql
-#    healthcheck:
-#      test: /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "BankingDB@2024" -Q "SELECT 1" || exit 1
+      - ./database/init.sql:/init.sql
+    healthcheck:
+      test: /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "BankingDB@2024" -Q "SELECT 1" -C || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  dbinit:
+    image: mcr.microsoft.com/mssql/server:2019-latest
+    container_name: banking_dbinit
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    volumes:
+      - ./database/init.sql:/init.sql
+    environment:
+      SA_PASSWORD: "BankingDB@2024"
+    command: >
+      bash -c "/opt/mssql-tools18/bin/sqlcmd -S sqlserver -U sa -P 'BankingDB@2024' -i /init.sql -C && echo 'DB init done'"
+    restart: on-failure
 
   app:
     build: ./backend
@@ -22,15 +41,28 @@ services:
       - "8000:8000"
     environment:
       DB_SERVER: sqlserver
-      DB_NAME: PractiseBanking
+      DB_NAME: banking_transaction
       DB_USER: sa
       DB_PASSWORD: "BankingDB@2024"
     depends_on:
-      - sqlserver
-#      sqlserver:
-#        condition: service_healthy
+      sqlserver:
+        condition: service_healthy
+      dbinit:
+        condition: service_completed_successfully
     volumes:
       - ./backend:/app
+
+  frontend:
+    image: node:20-alpine
+    container_name: banking_frontend
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+    ports:
+      - "3000:3000"
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 3000"
+    depends_on:
+      - app
 
 volumes:
   sqlserver_data:
