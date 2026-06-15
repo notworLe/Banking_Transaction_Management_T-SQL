@@ -162,7 +162,7 @@ GO
 -- SQL Server tự phát hiện và rollback 1 session (deadlock victim)
 -- ============================================================
 PRINT '=== SECTION 4: DEADLOCK Prevention ===';
-
+GO
 -- PHÒNG TRÁNH DEADLOCK: luôn lock theo thứ tự tăng dần (AccountNumber ASC)
 -- Stored proc sp_Transfer trong init.sql đã làm điều này:
 
@@ -273,6 +273,7 @@ GO
 -- SECTION 7: VIEW - Đơn giản hóa truy vấn phức tạp
 -- ============================================================
 PRINT '=== SECTION 7: Views ===';
+GO
 
 CREATE OR ALTER VIEW vw_CustomerBalance AS
     SELECT c.FullName, u.Username, u.Status AS UserStatus,
@@ -307,6 +308,7 @@ GO
 -- SECTION 8: TRIGGER - Tự động audit khi số dư thay đổi
 -- ============================================================
 PRINT '=== SECTION 8: Trigger ===';
+GO
 
 CREATE OR ALTER TRIGGER trg_AuditBalanceChange
 ON BankAccounts
