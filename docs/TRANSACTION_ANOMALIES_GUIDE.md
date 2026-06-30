@@ -1,333 +1,317 @@
 # TRANSACTION ANOMALIES GUIDE
 
-# 1. Transaction Overview
+## 1. Giới thiệu
 
-## Definition
+Trong hệ quản trị cơ sở dữ liệu, nhiều Transaction có thể được thực hiện đồng thời nhằm tăng hiệu năng và khả năng phục vụ nhiều người dùng cùng lúc.
 
-Transaction là một đơn vị công việc (Unit of Work) trong cơ sở dữ liệu, bao gồm một hoặc nhiều thao tác đọc và ghi dữ liệu được thực hiện như một thể thống nhất.
+Tuy nhiên, nếu các Transaction truy cập và cập nhật cùng một dữ liệu mà không được đồng bộ đúng cách, hệ thống có thể xuất hiện các hiện tượng bất thường (Transaction Anomalies).
 
-Một Transaction chỉ được xem là hoàn thành khi toàn bộ các thao tác bên trong thành công. Nếu xảy ra lỗi ở bất kỳ bước nào, toàn bộ thay đổi phải được hoàn tác (Rollback).
-
-Trong hệ thống ngân hàng, các nghiệp vụ như:
-
-* Chuyển tiền
-* Rút tiền
-* Nạp tiền
-* Mở tài khoản
-
-đều phải được thực hiện bên trong Transaction.
-
-### Typical Transaction Flow
-
-1. Bắt đầu Transaction.
-2. Kiểm tra dữ liệu đầu vào.
-3. Kiểm tra điều kiện nghiệp vụ.
-4. Thực hiện các thao tác đọc và ghi dữ liệu.
-5. Ghi lịch sử và Audit Log.
-6. Commit nếu thành công.
-7. Rollback nếu có lỗi.
+Trong dự án **Banking Transaction Management**, nhóm xây dựng các kịch bản mô phỏng năm lỗi đồng thời phổ biến nhằm minh họa cơ chế hoạt động của Transaction và các phương pháp khắc phục trong SQL Server.
 
 ---
 
-# 2. ACID Properties
+# 2. Transaction và ACID
 
-Để đảm bảo dữ liệu luôn chính xác, mọi Transaction trong hệ thống phải tuân thủ bốn tính chất ACID.
+## Transaction là gì?
 
-## Atomicity
+Transaction là một đơn vị xử lý logic gồm một hoặc nhiều thao tác trên cơ sở dữ liệu.
 
-Transaction phải được thực hiện toàn bộ hoặc không thực hiện gì cả.
+Một Transaction chỉ kết thúc khi:
 
-Ví dụ:
-
-Trong giao dịch chuyển tiền:
-
-* Trừ tiền thành công.
-* Cộng tiền thất bại.
-
-=> Hệ thống phải Rollback để tránh mất tiền.
+- COMMIT
+- hoặc ROLLBACK
 
 ---
 
-## Consistency
+## Tính chất ACID
 
-Transaction phải đưa cơ sở dữ liệu từ trạng thái hợp lệ này sang trạng thái hợp lệ khác.
+| Thuộc tính | Ý nghĩa |
+|------------|----------|
+| Atomicity | Hoặc thực hiện toàn bộ, hoặc không thực hiện gì |
+| Consistency | Đưa dữ liệu từ trạng thái hợp lệ này sang trạng thái hợp lệ khác |
+| Isolation | Các Transaction không ảnh hưởng lẫn nhau khi đang thực hiện |
+| Durability | Dữ liệu đã Commit sẽ không bị mất |
 
-Ví dụ:
-
-* Không cho phép số dư âm.
-* Không cho phép chuyển tiền đến tài khoản không tồn tại.
-
----
-
-## Isolation
-
-Các Transaction chạy đồng thời không được làm ảnh hưởng lẫn nhau theo cách gây sai lệch dữ liệu.
-
-Isolation là nguyên nhân xuất hiện các Transaction Anomalies được trình bày trong tài liệu này.
+Trong tài liệu này, nhóm tập trung vào **Isolation**, vì đây là nguyên nhân dẫn đến các lỗi truy cập đồng thời.
 
 ---
 
-## Durability
+# 3. Isolation Level
 
-Sau khi Commit thành công, dữ liệu phải được lưu trữ bền vững và không bị mất ngay cả khi hệ thống gặp sự cố.
+Isolation Level quy định mức độ cô lập giữa các Transaction đang chạy đồng thời.
 
----
+SQL Server hỗ trợ nhiều mức cô lập khác nhau.
 
-# 3. Transaction Anomalies Overview
+| Isolation Level | Dirty Read | Non-repeatable Read | Phantom | Lost Update | Deadlock |
+|-----------------|-----------|---------------------|----------|-------------|----------|
+| READ UNCOMMITTED | ✗ | ✗ | ✗ | ✗ | Có thể |
+| READ COMMITTED | ✓ | ✗ | ✗ | ✗ | Có thể |
+| REPEATABLE READ | ✓ | ✓ | ✗ | ✗ | Có thể |
+| SERIALIZABLE | ✓ | ✓ | ✓ | ✓* | Có thể |
 
-## Definition
-
-Transaction Anomaly là hiện tượng dữ liệu không nhất quán phát sinh khi nhiều Transaction cùng truy cập và thao tác trên cùng một tập dữ liệu nhưng không được cô lập (Isolation) đúng cách.
-
-Các lỗi này không phải do cú pháp SQL sai, mà do sự tương tác đồng thời giữa nhiều Transaction.
-
-Trong hệ thống ngân hàng, các lỗi này có thể dẫn đến:
-
-* Sai số dư tài khoản.
-* Báo cáo sai.
-* Kiểm tra hạn mức sai.
-* Mất dữ liệu cập nhật.
-* Hiển thị thông tin không chính xác.
-
-Bốn Transaction Anomalies phổ biến gồm:
-
-* Dirty Read
-* Non-repeatable Read
-* Phantom Read
-* Lost Update
+> *Lost Update còn phụ thuộc vào cách thiết kế câu lệnh cập nhật dữ liệu.
 
 ---
 
 # 4. Dirty Read
 
-## Definition
+## Định nghĩa
 
-Dirty Read xảy ra khi một Transaction đọc dữ liệu chưa được Commit bởi một Transaction khác.
+Dirty Read xảy ra khi một Transaction đọc dữ liệu chưa được COMMIT của Transaction khác.
 
-Nếu Transaction ghi sau đó bị Rollback, dữ liệu mà Transaction đọc được thực tế chưa từng tồn tại trong hệ thống.
-
----
-
-## Banking Example
-
-Giả sử tài khoản A có số dư:
-
-100.000.000 VND
-
-Transaction A thực hiện:
-
-* Trừ tiền còn 50.000.000 VND.
-* Chưa Commit.
-
-Trong lúc đó:
-
-Transaction B đọc số dư và thấy:
-
-50.000.000 VND
-
-Sau đó Transaction A gặp lỗi và Rollback.
-
-Số dư thực tế vẫn là:
-
-100.000.000 VND.
-
-Transaction B đã đọc một giá trị không tồn tại thực sự.
+Nếu Transaction ghi sau đó ROLLBACK thì dữ liệu đã đọc thực chất chưa từng tồn tại.
 
 ---
 
-## Consequences
+## Điều kiện xảy ra
 
-* Hiển thị sai số dư.
-* Báo cáo sai.
-* Đưa ra quyết định dựa trên dữ liệu chưa hợp lệ.
+- Transaction A cập nhật dữ liệu.
+- Chưa COMMIT.
+- Transaction B đọc dữ liệu đó.
+- Transaction A ROLLBACK.
 
 ---
 
-## Prevention
+## Hậu quả
 
-Không cho phép đọc dữ liệu chưa Commit.
+- Đọc dữ liệu không hợp lệ.
+- Quyết định nghiệp vụ sai.
+- Báo cáo sai.
 
-Sử dụng mức cô lập phù hợp như READ COMMITTED hoặc cao hơn.
+---
+
+## Kịch bản demo
+
+**Nghiệp vụ**
+
+Phê duyệt khoản vay dựa trên số dư tài khoản.
+
+Transaction A đang cập nhật số dư nhưng chưa COMMIT.
+
+Transaction B đọc ngay số dư đó để quyết định phê duyệt khoản vay.
+
+Sau đó Transaction A bị lỗi và ROLLBACK.
+
+Kết quả:
+
+Banker đã ra quyết định dựa trên dữ liệu chưa từng tồn tại.
+
+---
+
+## Phương pháp khắc phục
+
+- READ COMMITTED (mặc định SQL Server)
+- Snapshot Isolation (nếu cần đọc không khóa)
 
 ---
 
 # 5. Non-repeatable Read
 
-## Definition
+## Định nghĩa
 
-Non-repeatable Read xảy ra khi cùng một Transaction đọc lại cùng một bản ghi nhưng nhận được giá trị khác nhau vì Transaction khác đã cập nhật dữ liệu và Commit trong khoảng thời gian giữa hai lần đọc.
+Non-repeatable Read xảy ra khi cùng một Transaction đọc cùng một bản ghi hai lần nhưng nhận hai kết quả khác nhau.
 
----
-
-## Banking Example
-
-Transaction A đọc số dư:
-
-100.000.000 VND
-
-Trong lúc Transaction A vẫn đang thực hiện:
-
-Transaction B cập nhật số dư thành:
-
-120.000.000 VND
-
-và Commit.
-
-Transaction A đọc lại cùng tài khoản.
-
-Kết quả:
-
-120.000.000 VND.
-
-Hai lần đọc cùng một bản ghi nhưng nhận được hai kết quả khác nhau.
+Nguyên nhân là giữa hai lần đọc có Transaction khác cập nhật và COMMIT dữ liệu.
 
 ---
 
-## Consequences
+## Điều kiện xảy ra
 
-* Báo cáo không nhất quán.
-* Dữ liệu thay đổi trong cùng một giao dịch.
-* Sai lệch khi tính toán.
+- Transaction A đọc dữ liệu.
+- Transaction B cập nhật dữ liệu và COMMIT.
+- Transaction A đọc lại.
 
 ---
 
-## Prevention
+## Hậu quả
 
-Sử dụng mức cô lập REPEATABLE READ hoặc các cơ chế khóa phù hợp.
+- Báo cáo không nhất quán.
+- So sánh dữ liệu sai.
+
+---
+
+## Kịch bản demo
+
+**Nghiệp vụ**
+
+Nhân viên kiểm tra thông tin tài khoản khách hàng.
+
+Trong lúc đang xem, giao dịch khác thay đổi trạng thái tài khoản.
+
+Lần đọc thứ hai cho kết quả khác lần đầu.
+
+---
+
+## Phương pháp khắc phục
+
+- REPEATABLE READ
+- SERIALIZABLE
 
 ---
 
 # 6. Phantom Read
 
-## Definition
+## Định nghĩa
 
-Phantom Read xảy ra khi một Transaction thực hiện truy vấn theo điều kiện và thu được một tập bản ghi. Trong khi Transaction đó chưa kết thúc, Transaction khác thêm hoặc xóa các bản ghi thỏa mãn điều kiện truy vấn. Khi Transaction đầu tiên thực hiện lại cùng truy vấn, tập kết quả thay đổi do xuất hiện hoặc biến mất các bản ghi mới (Phantom Rows).
+Phantom Read xảy ra khi cùng một Transaction thực hiện nhiều lần một câu truy vấn theo điều kiện (Range Query) nhưng số lượng bản ghi hoặc kết quả tổng hợp thay đổi vì Transaction khác chèn hoặc xóa bản ghi phù hợp điều kiện.
 
-Khác với Non-repeatable Read, Phantom Read không làm thay đổi giá trị của một bản ghi đã tồn tại mà làm thay đổi số lượng hoặc tập hợp các bản ghi được trả về.
-
----
-
-## Banking Example
-
-Ngân hàng quy định:
-
-Tổng số tiền chuyển trong ngày không được vượt quá:
-
-100.000.000 VND.
-
-Transaction A kiểm tra:
-
-Tổng tiền hôm nay:
-
-80.000.000 VND.
-
-Trong lúc đó:
-
-Transaction B tạo thêm một giao dịch chuyển:
-
-15.000.000 VND
-
-và Commit.
-
-Transaction A tiếp tục xử lý dựa trên kết quả cũ.
-
-Nếu Transaction A thực hiện truy vấn lại, tổng tiền sẽ trở thành:
-
-95.000.000 VND.
-
-Sự xuất hiện của giao dịch mới chính là Phantom Row.
+Điểm khác biệt so với Non-repeatable Read là dữ liệu thay đổi không phải do sửa một dòng đã tồn tại mà do xuất hiện hoặc biến mất các dòng mới.
 
 ---
 
-## Consequences
+## Điều kiện xảy ra
 
-* Kiểm tra hạn mức sai.
-* Báo cáo thống kê sai.
-* Kết quả truy vấn không ổn định.
+- Transaction A truy vấn theo điều kiện.
+- Transaction B INSERT hoặc DELETE dữ liệu phù hợp điều kiện.
+- Transaction A truy vấn lại.
 
 ---
 
-## Prevention
+## Hậu quả
 
-Sử dụng SERIALIZABLE hoặc các cơ chế khóa phạm vi dữ liệu (Range Lock).
+- Tổng tiền sai.
+- Đếm số lượng sai.
+- Kiểm tra hạn mức sai.
+
+---
+
+## Kịch bản demo
+
+**Nghiệp vụ**
+
+Kiểm tra hạn mức chuyển tiền tối đa 100 triệu đồng/ngày.
+
+Hai giao dịch cùng kiểm tra tổng tiền đã chuyển trong ngày.
+
+Cả hai đều thấy điều kiện còn hợp lệ và cùng thực hiện chuyển tiền.
+
+Kết quả tổng tiền vượt quá hạn mức quy định.
+
+---
+
+## Phương pháp khắc phục
+
+- SERIALIZABLE
+- HOLDLOCK
+- UPDLOCK
 
 ---
 
 # 7. Lost Update
 
-## Definition
+## Định nghĩa
 
-Lost Update xảy ra khi hai Transaction cùng cập nhật một bản ghi dựa trên cùng một giá trị ban đầu. Kết quả cập nhật của một Transaction bị Transaction còn lại ghi đè, dẫn đến mất dữ liệu.
+Lost Update xảy ra khi hai Transaction cùng cập nhật một bản ghi và kết quả cập nhật của Transaction trước bị Transaction sau ghi đè.
 
----
-
-## Banking Example
-
-Tài khoản có số dư:
-
-100.000.000 VND.
-
-Transaction A:
-
-Rút 30.000.000 VND.
-
-Transaction B:
-
-Rút 50.000.000 VND.
-
-Cả hai cùng đọc số dư ban đầu:
-
-100.000.000 VND.
-
-Sau khi hai Transaction hoàn thành, số dư cuối cùng có thể là:
-
-70.000.000 VND
-
-hoặc
-
-50.000.000 VND
-
-Trong khi kết quả đúng phải là:
-
-20.000.000 VND.
-
-Một trong hai lần cập nhật đã bị mất.
+Một trong hai thay đổi bị mất hoàn toàn.
 
 ---
 
-## Consequences
+## Điều kiện xảy ra
 
-* Sai số dư tài khoản.
-* Mất dữ liệu cập nhật.
-* Giao dịch tài chính không chính xác.
-
----
-
-## Prevention
-
-Sử dụng khóa dữ liệu phù hợp hoặc cập nhật dữ liệu theo cơ chế nguyên tử (Atomic Update).
+- Hai Transaction cùng đọc một giá trị.
+- Cùng tính toán giá trị mới.
+- Cùng UPDATE.
 
 ---
 
-# 8. Comparison Summary
+## Hậu quả
 
-| Anomaly             | Nguyên nhân                                    | Dấu hiệu                                        |
-| ------------------- | ---------------------------------------------- | ----------------------------------------------- |
-| Dirty Read          | Đọc dữ liệu chưa Commit                        | Đọc dữ liệu không tồn tại thực sự               |
-| Non-repeatable Read | Bản ghi bị UPDATE giữa hai lần đọc             | Hai lần đọc cùng một dòng cho kết quả khác nhau |
-| Phantom Read        | Có INSERT hoặc DELETE làm thay đổi tập kết quả | Số lượng bản ghi thay đổi                       |
-| Lost Update         | Hai Transaction cùng ghi lên một dữ liệu       | Một cập nhật bị ghi đè                          |
+- Mất dữ liệu.
+- Sai số dư.
+- Sai kết quả tính toán.
 
 ---
 
-# 9. Design Principles
+## Kịch bản demo
 
-Để hạn chế các Transaction Anomalies trong hệ thống quản lý giao dịch ngân hàng, nhóm thống nhất các nguyên tắc thiết kế sau:
+**Nghiệp vụ**
 
-* Mọi nghiệp vụ tài chính phải được thực hiện trong Transaction.
-* Toàn bộ Business Logic được triển khai trong Stored Procedure.
-* Không thao tác trực tiếp với bảng dữ liệu từ ứng dụng.
-* Kiểm tra đầy đủ dữ liệu đầu vào trước khi cập nhật.
-* Sử dụng mức cô lập (Isolation Level) phù hợp với từng nghiệp vụ.
-* Ghi Audit Log cho mọi thay đổi quan trọng.
-* Ưu tiên tính đúng đắn của dữ liệu hơn hiệu năng đối với các giao dịch tài chính.
+Hai giao dịch cùng cộng điểm thưởng cho một khách hàng.
+
+Cả hai đều đọc điểm hiện tại là 100.
+
+Một giao dịch cộng thêm 10 điểm.
+
+Giao dịch còn lại cộng thêm 20 điểm.
+
+Kết quả cuối cùng chỉ còn 120 hoặc 110 thay vì 130.
+
+---
+
+## Phương pháp khắc phục
+
+- UPDLOCK
+- SERIALIZABLE
+- Optimistic Concurrency (Version)
+
+---
+
+# 8. Deadlock
+
+## Định nghĩa
+
+Deadlock xảy ra khi hai hoặc nhiều Transaction giữ khóa của nhau và cùng chờ tài nguyên mà Transaction còn lại đang nắm giữ.
+
+Không Transaction nào có thể tiếp tục.
+
+SQL Server sẽ tự động chọn một Transaction làm Deadlock Victim và ROLLBACK Transaction đó.
+
+---
+
+## Điều kiện xảy ra
+
+- Transaction A giữ khóa tài nguyên X.
+- Transaction B giữ khóa tài nguyên Y.
+- A chờ Y.
+- B chờ X.
+
+---
+
+## Hậu quả
+
+- Transaction bị hủy.
+- Người dùng nhận lỗi 1205.
+- Phải thực hiện lại giao dịch.
+
+---
+
+## Kịch bản demo
+
+**Nghiệp vụ**
+
+Hai nhân viên ngân hàng đồng thời thực hiện chuyển quyền quản lý hai tài khoản theo thứ tự khóa khác nhau.
+
+Mỗi Transaction giữ một khóa và chờ khóa còn lại.
+
+SQL Server phát hiện Deadlock và hủy một Transaction.
+
+---
+
+## Phương pháp khắc phục
+
+- Thống nhất thứ tự khóa tài nguyên.
+- Giữ Transaction ngắn.
+- Retry khi gặp lỗi 1205.
+
+---
+
+# 9. Tổng hợp các lỗi
+
+| Lỗi | Đặc điểm | Giải pháp chính |
+|------|----------|-----------------|
+| Dirty Read | Đọc dữ liệu chưa Commit | READ COMMITTED |
+| Non-repeatable Read | Một dòng thay đổi giữa hai lần đọc | REPEATABLE READ |
+| Phantom Read | Xuất hiện hoặc mất các dòng dữ liệu | SERIALIZABLE |
+| Lost Update | Hai Transaction ghi đè lẫn nhau | UPDLOCK / Version |
+| Deadlock | Hai Transaction chờ khóa của nhau | Thống nhất thứ tự khóa, Retry |
+
+---
+
+# 10. Kết luận
+
+Các lỗi truy cập đồng thời là hệ quả tất yếu khi nhiều Transaction cùng thao tác trên dữ liệu.
+
+Việc lựa chọn mức cô lập (Isolation Level) và cơ chế khóa (Locking) phù hợp giúp cân bằng giữa tính nhất quán dữ liệu và hiệu năng của hệ thống.
+
+Trong dự án này, nhóm xây dựng năm kịch bản mô phỏng tương ứng với năm lỗi phổ biến nhằm giúp người học quan sát trực tiếp nguyên nhân, hậu quả và phương pháp khắc phục của từng hiện tượng trong SQL Server.

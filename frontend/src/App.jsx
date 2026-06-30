@@ -5,6 +5,7 @@ import { AdminStats, AdminUsers, AdminBankers, AdminAuditLogs, AdminLoginLogs, T
 import { BankerCustomers, BankerAccounts, BankerTransactions } from './components/BankerDashboard.jsx';
 import { CustomerProfile, CustomerAccounts, CustomerTransactions, CustomerTransfer, CustomerWithdrawDeposit } from './components/CustomerDashboard.jsx';
 import { apiFetch, getUser } from './api.js';
+import TransactionDemo from './pages/TransactionDemo.jsx';
 
 const NAV = {
   Admin: [
@@ -13,6 +14,7 @@ const NAV = {
     { key: 'bankers',  icon: '🏦', label: 'Bankers' },
     { key: 'audit',    icon: '📋', label: 'Audit Logs' },
     { key: 'logins',   icon: '🔐', label: 'Login Logs' },
+    { key: 'demo',     icon: '🧪', label: 'Demo T-SQL' },
   ],
   Banker: [
     { key: 'customers',    icon: '👥', label: 'Khách hàng' },
@@ -61,6 +63,7 @@ function PageContent({ role, page, toast }) {
     if (page === 'bankers')   return <><div className="page-header"><h2>QUẢN LÝ BANKERS</h2><p>Tạo và quản lý nhân viên</p></div><AdminBankers toast={toast} /></>;
     if (page === 'audit')     return <><div className="page-header"><h2>AUDIT LOGS</h2><p>Nhật ký hoạt động hệ thống</p></div><AdminAuditLogs /></>;
     if (page === 'logins')    return <><div className="page-header"><h2>LOGIN LOGS</h2><p>Lịch sử đăng nhập</p></div><AdminLoginLogs /></>;
+    if (page === 'demo')      return <><div className="page-header"><h2>DEMO CONCURRENCY ANOMALIES</h2><p>Mô phỏng và khắc phục tranh chấp giao dịch</p></div><TransactionDemo toast={toast} /></>;
   }
   if (role === 'Banker') {
     if (page === 'customers')    return <><div className="page-header"><h2>KHÁCH HÀNG</h2><p>Xem và tìm kiếm thông tin khách hàng</p></div><BankerCustomers toast={toast} /></>;

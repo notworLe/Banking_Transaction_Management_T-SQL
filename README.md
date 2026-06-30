@@ -14,4 +14,5 @@
 Run the following SQL file to populate the database with sample data.  
 Click on `init.sql`, execute this file.
 4. 
+python -m uvicorn main:app --port 9000
 

@@ -286,3 +286,813 @@ BEGIN
     END CATCH
 END
 GO
+
+-- ============================================================
+-- DEMO LOGS & PROCEDURES (Sprint 2 & 3 Demo Framework)
+-- ============================================================
+
+IF OBJECT_ID('dbo.Demo_Logs', 'U') IS NOT NULL
+BEGIN
+    DROP TABLE dbo.Demo_Logs;
+END
+GO
+
+CREATE TABLE dbo.Demo_Logs
+(
+    LogId INT IDENTITY(1,1) PRIMARY KEY,
+    Scenario NVARCHAR(50) NOT NULL,
+    SessionId INT NOT NULL,
+    Actor NVARCHAR(20) NOT NULL,
+    Action NVARCHAR(30),
+    ActionTime DATETIME2(3)
+        CONSTRAINT DF_DemoLogs_ActionTime
+        DEFAULT SYSDATETIME(),
+    Message NVARCHAR(500) NOT NULL
+);
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Demo_Log
+(
+    @Scenario NVARCHAR(50),
+    @Actor NVARCHAR(20),
+    @Action NVARCHAR(30),
+    @Message NVARCHAR(500)
+)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    INSERT INTO dbo.Demo_Logs
+    (
+        Scenario,
+        SessionId,
+        Actor,
+        Action,
+        Message
+    )
+    VALUES
+    (
+        @Scenario,
+        @@SPID,
+        @Actor,
+        @Action,
+        @Message
+    );
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Demo_ClearLogs
+(
+    @Scenario NVARCHAR(50) = NULL
+)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF @Scenario IS NULL
+    BEGIN
+        DELETE FROM dbo.Demo_Logs;
+    END
+    ELSE
+    BEGIN
+        DELETE FROM dbo.Demo_Logs
+        WHERE Scenario = @Scenario;
+    END
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Demo_GetLogs
+(
+    @Scenario NVARCHAR(50) = NULL
+)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT
+        LogId,
+        Scenario,
+        SessionId,
+        Actor,
+        Action,
+        ActionTime,
+        Message
+    FROM dbo.Demo_Logs
+    WHERE
+        @Scenario IS NULL
+        OR Scenario = @Scenario
+    ORDER BY
+        ActionTime,
+        LogId;
+END
+GO
+
+-- Ensure the index for range locking exists
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IX_Transactions_DailyLimitDemo'
+      AND object_id = OBJECT_ID('dbo.Transactions')
+)
+BEGIN
+    CREATE INDEX IX_Transactions_DailyLimitDemo
+    ON dbo.Transactions (FromBankAccountId, Type, Status, CreatedAt)
+    INCLUDE (Amount);
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Demo_Phantom_Reset
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    DECLARE @Scenario NVARCHAR(50) = N'PHANTOM';
+    DECLARE @Actor NVARCHAR(20) = N'System';
+    DECLARE @Action NVARCHAR(30) = N'RESET';
+
+    -- 1. Xóa các giao dịch demo cũ
+    DELETE FROM dbo.Transactions
+    WHERE Description LIKE N'PHANTOM_LIMIT_DEMO|%';
+
+    -- 2. Xóa logs của Scenario PHANTOM
+    EXEC dbo.sp_Demo_ClearLogs @Scenario = @Scenario;
+
+    -- 3. Tìm tài khoản nguồn, tài khoản đích và User active
+    DECLARE @FromAccountId UNIQUEIDENTIFIER;
+    DECLARE @ToAccountId UNIQUEIDENTIFIER;
+    DECLARE @UserId UNIQUEIDENTIFIER;
+
+    SELECT TOP 1 @FromAccountId = BankAccountId
+    FROM dbo.BankAccounts
+    WHERE Status = 'active'
+    ORDER BY AccountNumber;
+
+    SELECT TOP 1 @ToAccountId = BankAccountId
+    FROM dbo.BankAccounts
+    WHERE Status = 'active'
+      AND BankAccountId <> @FromAccountId
+    ORDER BY AccountNumber;
+
+    SELECT TOP 1 @UserId = UserId
+    FROM dbo.Users
+    WHERE Status = 'active'
+    ORDER BY Username;
+
+    IF @FromAccountId IS NULL OR @ToAccountId IS NULL OR @UserId IS NULL
+    BEGIN
+        THROW 51000, N'Không đủ dữ liệu mẫu: cần ít nhất 2 tài khoản active và 1 user active.', 1;
+    END;
+
+    -- Reset balance of from account to 200M so we have enough balance to demo limit
+    UPDATE dbo.BankAccounts
+    SET Balance = 200000000.00
+    WHERE BankAccountId = @FromAccountId;
+
+    -- 4. Tạo baseline giao dịch chuyển khoản 80.000.000 VND cho ngày hôm nay
+    INSERT INTO dbo.Transactions (
+        TransactionId,
+        FromBankAccountId,
+        ToBankAccountId,
+        CreatedByUserId,
+        Type,
+        Amount,
+        Status,
+        CreatedAt,
+        Description
+    )
+    VALUES (
+        NEWID(),
+        @FromAccountId,
+        @ToAccountId,
+        @UserId,
+        'transfer',
+        80000000.00,
+        'success',
+        SYSDATETIME(),
+        N'PHANTOM_LIMIT_DEMO|BASELINE|Today total starts at 80,000,000'
+    );
+
+    -- 5. Ghi log hoàn thành reset
+    EXEC dbo.sp_Demo_Log 
+        @Scenario = @Scenario,
+        @Actor = @Actor,
+        @Action = @Action,
+        @Message = N'Reset complete. Baseline transfer = 80,000,000.';
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Demo_Phantom_Bad
+    @Delay CHAR(8) = '00:00:08'
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    DECLARE @Scenario NVARCHAR(50) = N'PHANTOM';
+    DECLARE @Actor NVARCHAR(20) = CONCAT(N'Session ', @@SPID);
+    DECLARE @Message NVARCHAR(500);
+
+    DECLARE @DailyLimit DECIMAL(18,2) = 100000000;
+    DECLARE @TransferAmount DECIMAL(18,2) = 15000000;
+    DECLARE @TodayTotal DECIMAL(18,2);
+    DECLARE @FinalTotal DECIMAL(18,2);
+
+    DECLARE @FromAccountId UNIQUEIDENTIFIER;
+    DECLARE @ToAccountId UNIQUEIDENTIFIER;
+    DECLARE @UserId UNIQUEIDENTIFIER;
+    DECLARE @TransactionId UNIQUEIDENTIFIER = NEWID();
+
+    DECLARE @StartOfDay DATETIME2(3) =
+        CONVERT(DATETIME2(3), CONVERT(DATE, SYSDATETIME()));
+
+    DECLARE @EndOfDay DATETIME2(3) =
+        DATEADD(DAY, 1, @StartOfDay);
+
+    -- Tìm dữ liệu mẫu
+    SELECT TOP 1 @FromAccountId = BankAccountId
+    FROM dbo.BankAccounts
+    WHERE Status = 'active'
+    ORDER BY AccountNumber;
+
+    SELECT TOP 1 @ToAccountId = BankAccountId
+    FROM dbo.BankAccounts
+    WHERE Status = 'active'
+      AND BankAccountId <> @FromAccountId
+    ORDER BY AccountNumber;
+
+    SELECT TOP 1 @UserId = UserId
+    FROM dbo.Users
+    WHERE Status = 'active'
+    ORDER BY Username;
+
+    IF @FromAccountId IS NULL OR @ToAccountId IS NULL OR @UserId IS NULL
+    BEGIN
+        THROW 52000, N'Không đủ dữ liệu mẫu: cần ít nhất 2 tài khoản active và 1 user active.', 1;
+    END;
+
+    BEGIN TRY
+        EXEC dbo.sp_Demo_Log
+            @Scenario = @Scenario,
+            @Actor = @Actor,
+            @Action = N'BEGIN',
+            @Message = N'BAD: BEGIN TRANSACTION';
+
+        BEGIN TRANSACTION;
+
+        EXEC dbo.sp_Demo_Log
+            @Scenario = @Scenario,
+            @Actor = @Actor,
+            @Action = N'READ',
+            @Message = N'BAD: Before reading today transfer SUM';
+
+        -- Đọc tổng tiền chuyển hôm nay dưới mức Read Committed
+        SELECT @TodayTotal = ISNULL(SUM(Amount), 0)
+        FROM dbo.Transactions
+        WHERE FromBankAccountId = @FromAccountId
+          AND Type = 'transfer'
+          AND Status = 'success'
+          AND CreatedAt >= @StartOfDay
+          AND CreatedAt < @EndOfDay
+          AND Description LIKE N'PHANTOM_LIMIT_DEMO|%';
+
+        SET @Message = CONCAT(
+            N'BAD: TodayTotal read = ',
+            CONVERT(NVARCHAR(50), CAST(@TodayTotal AS MONEY), 1)
+        );
+
+        EXEC dbo.sp_Demo_Log
+            @Scenario = @Scenario,
+            @Actor = @Actor,
+            @Action = N'READ',
+            @Message = @Message;
+
+        SET @Message = CONCAT(N'BAD: Before WAITFOR ', @Delay);
+
+        EXEC dbo.sp_Demo_Log
+            @Scenario = @Scenario,
+            @Actor = @Actor,
+            @Action = N'WAITFOR',
+            @Message = @Message;
+
+        -- Chờ để tạo cơ hội đồng thời
+        WAITFOR DELAY @Delay;
+
+        EXEC dbo.sp_Demo_Log
+            @Scenario = @Scenario,
+            @Actor = @Actor,
+            @Action = N'AFTER WAITFOR',
+            @Message = N'BAD: After WAITFOR';
+
+        -- Kiểm tra hạn mức dựa trên tổng cũ đã đọc
+        IF @TodayTotal + @TransferAmount <= @DailyLimit
+        BEGIN
+            EXEC dbo.sp_Demo_Log
+                @Scenario = @Scenario,
+                @Actor = @Actor,
+                @Action = N'LIMIT CHECK',
+                @Message = N'BAD: Limit check PASSED based on old SUM. Before INSERT';
+
+            INSERT INTO dbo.Transactions (
+                TransactionId,
+                FromBankAccountId,
+                ToBankAccountId,
+                CreatedByUserId,
+                Type,
+                Amount,
+                Status,
+                CreatedAt,
+                Description
+            )
+            VALUES (
+                @TransactionId,
+                @FromAccountId,
+                @ToAccountId,
+                @UserId,
+                'transfer',
+                @TransferAmount,
+                'success',
+                SYSDATETIME(),
+                N'PHANTOM_LIMIT_DEMO|BAD|Inserted transfer after stale SUM check'
+            );
+
+            SET @Message = CONCAT(
+                N'BAD: Inserted transfer amount = ',
+                CONVERT(NVARCHAR(50), CAST(@TransferAmount AS MONEY), 1),
+                N', TransactionId = ',
+                CONVERT(NVARCHAR(36), @TransactionId)
+            );
+
+            EXEC dbo.sp_Demo_Log
+                @Scenario = @Scenario,
+                @Actor = @Actor,
+                @Action = N'INSERT',
+                @Message = @Message;
+        END
+        ELSE
+        BEGIN
+            EXEC dbo.sp_Demo_Log
+                @Scenario = @Scenario,
+                @Actor = @Actor,
+                @Action = N'LIMIT CHECK',
+                @Message = N'BAD: Limit check FAILED. No insert.';
+        END;
+
+        -- Đọc lại tổng tiền chuyển để ghi log kiểm tra
+        SELECT @FinalTotal = ISNULL(SUM(Amount), 0)
+        FROM dbo.Transactions
+        WHERE FromBankAccountId = @FromAccountId
+          AND Type = 'transfer'
+          AND Status = 'success'
+          AND CreatedAt >= @StartOfDay
+          AND CreatedAt < @EndOfDay
+          AND Description LIKE N'PHANTOM_LIMIT_DEMO|%';
+
+        SET @Message = CONCAT(
+            N'BAD: FinalTotal visible inside transaction = ',
+            CONVERT(NVARCHAR(50), CAST(@FinalTotal AS MONEY), 1)
+        );
+
+        EXEC dbo.sp_Demo_Log
+            @Scenario = @Scenario,
+            @Actor = @Actor,
+            @Action = N'FINAL SUM',
+            @Message = @Message;
+
+        COMMIT TRANSACTION;
+
+        EXEC dbo.sp_Demo_Log
+            @Scenario = @Scenario,
+            @Actor = @Actor,
+            @Action = N'COMMIT',
+            @Message = N'BAD: COMMIT';
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0
+            ROLLBACK TRANSACTION;
+
+        SET @Message = CONCAT(N'BAD ERROR: ', ERROR_MESSAGE());
+
+        EXEC dbo.sp_Demo_Log
+            @Scenario = @Scenario,
+            @Actor = @Actor,
+            @Action = N'ROLLBACK',
+            @Message = @Message;
+
+        THROW;
+    END CATCH;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Demo_Phantom_Fix
+    @Delay CHAR(8) = '00:00:08'
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    DECLARE @Scenario NVARCHAR(50) = N'PHANTOM';
+    DECLARE @Actor NVARCHAR(20) = CONCAT(N'Session ', @@SPID);
+    DECLARE @Message NVARCHAR(500);
+
+    DECLARE @DailyLimit DECIMAL(18,2) = 100000000;
+    DECLARE @TransferAmount DECIMAL(18,2) = 15000000;
+    DECLARE @TodayTotal DECIMAL(18,2);
+    DECLARE @FinalTotal DECIMAL(18,2);
+
+    DECLARE @FromAccountId UNIQUEIDENTIFIER;
+    DECLARE @ToAccountId UNIQUEIDENTIFIER;
+    DECLARE @UserId UNIQUEIDENTIFIER;
+    DECLARE @TransactionId UNIQUEIDENTIFIER = NEWID();
+
+    DECLARE @StartOfDay DATETIME2(3) =
+        CONVERT(DATETIME2(3), CONVERT(DATE, SYSDATETIME()));
+
+    DECLARE @EndOfDay DATETIME2(3) =
+        DATEADD(DAY, 1, @StartOfDay);
+
+    -- Tìm dữ liệu mẫu
+    SELECT TOP 1 @FromAccountId = BankAccountId
+    FROM dbo.BankAccounts
+    WHERE Status = 'active'
+    ORDER BY AccountNumber;
+
+    SELECT TOP 1 @ToAccountId = BankAccountId
+    FROM dbo.BankAccounts
+    WHERE Status = 'active'
+      AND BankAccountId <> @FromAccountId
+    ORDER BY AccountNumber;
+
+    SELECT TOP 1 @UserId = UserId
+    FROM dbo.Users
+    WHERE Status = 'active'
+    ORDER BY Username;
+
+    IF @FromAccountId IS NULL OR @ToAccountId IS NULL OR @UserId IS NULL
+    BEGIN
+        THROW 53000, N'Không đủ dữ liệu mẫu: cần ít nhất 2 tài khoản active và 1 user active.', 1;
+    END;
+
+    -- Thiết lập mức cô lập SERIALIZABLE để tránh lỗi Phantom Read
+    SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+
+    BEGIN TRY
+        EXEC dbo.sp_Demo_Log
+            @Scenario = @Scenario,
+            @Actor = @Actor,
+            @Action = N'BEGIN',
+            @Message = N'FIX: BEGIN TRANSACTION with SERIALIZABLE';
+
+        BEGIN TRANSACTION;
+
+        EXEC dbo.sp_Demo_Log
+            @Scenario = @Scenario,
+            @Actor = @Actor,
+            @Action = N'READ',
+            @Message = N'FIX: Before reading today SUM with UPDLOCK, HOLDLOCK';
+
+        -- Sử dụng UPDLOCK, HOLDLOCK trên chỉ mục thích hợp để đặt Range Lock
+        SELECT @TodayTotal = ISNULL(SUM(Amount), 0)
+        FROM dbo.Transactions WITH (UPDLOCK, HOLDLOCK, INDEX(IX_Transactions_DailyLimitDemo))
+        WHERE FromBankAccountId = @FromAccountId
+          AND Type = 'transfer'
+          AND Status = 'success'
+          AND CreatedAt >= @StartOfDay
+          AND CreatedAt < @EndOfDay
+          AND Description LIKE N'PHANTOM_LIMIT_DEMO|%';
+
+        SET @Message = CONCAT(
+            N'FIX: TodayTotal read = ',
+            CONVERT(NVARCHAR(50), CAST(@TodayTotal AS MONEY), 1)
+        );
+
+        EXEC dbo.sp_Demo_Log
+            @Scenario = @Scenario,
+            @Actor = @Actor,
+            @Action = N'READ',
+            @Message = @Message;
+
+        SET @Message = CONCAT(N'FIX: Before WAITFOR ', @Delay);
+
+        EXEC dbo.sp_Demo_Log
+            @Scenario = @Scenario,
+            @Actor = @Actor,
+            @Action = N'WAITFOR',
+            @Message = @Message;
+
+        -- Chờ để tạo cơ hội đồng thời
+        WAITFOR DELAY @Delay;
+
+        EXEC dbo.sp_Demo_Log
+            @Scenario = @Scenario,
+            @Actor = @Actor,
+            @Action = N'AFTER WAITFOR',
+            @Message = N'FIX: After WAITFOR';
+
+        -- Kiểm tra hạn mức
+        IF @TodayTotal + @TransferAmount <= @DailyLimit
+        BEGIN
+            EXEC dbo.sp_Demo_Log
+                @Scenario = @Scenario,
+                @Actor = @Actor,
+                @Action = N'LIMIT CHECK',
+                @Message = N'FIX: Limit check PASSED. Before INSERT';
+
+            INSERT INTO dbo.Transactions (
+                TransactionId,
+                FromBankAccountId,
+                ToBankAccountId,
+                CreatedByUserId,
+                Type,
+                Amount,
+                Status,
+                CreatedAt,
+                Description
+            )
+            VALUES (
+                @TransactionId,
+                @FromAccountId,
+                @ToAccountId,
+                @UserId,
+                'transfer',
+                @TransferAmount,
+                'success',
+                SYSDATETIME(),
+                N'PHANTOM_LIMIT_DEMO|FIX|Inserted transfer after protected SUM check'
+            );
+
+            SET @Message = CONCAT(
+                N'FIX: Inserted transfer amount = ',
+                CONVERT(NVARCHAR(50), CAST(@TransferAmount AS MONEY), 1),
+                N', TransactionId = ',
+                CONVERT(NVARCHAR(36), @TransactionId)
+            );
+
+            EXEC dbo.sp_Demo_Log
+                @Scenario = @Scenario,
+                @Actor = @Actor,
+                @Action = N'INSERT',
+                @Message = @Message;
+        END
+        ELSE
+        BEGIN
+            EXEC dbo.sp_Demo_Log
+                @Scenario = @Scenario,
+                @Actor = @Actor,
+                @Action = N'LIMIT CHECK',
+                @Message = N'FIX: Limit check FAILED. No insert.';
+        END;
+
+        -- Đọc lại tổng để ghi log kiểm tra
+        SELECT @FinalTotal = ISNULL(SUM(Amount), 0)
+        FROM dbo.Transactions
+        WHERE FromBankAccountId = @FromAccountId
+          AND Type = 'transfer'
+          AND Status = 'success'
+          AND CreatedAt >= @StartOfDay
+          AND CreatedAt < @EndOfDay
+          AND Description LIKE N'PHANTOM_LIMIT_DEMO|%';
+
+        SET @Message = CONCAT(
+            N'FIX: FinalTotal visible inside transaction = ',
+            CONVERT(NVARCHAR(50), CAST(@FinalTotal AS MONEY), 1)
+        );
+
+        EXEC dbo.sp_Demo_Log
+            @Scenario = @Scenario,
+            @Actor = @Actor,
+            @Action = N'FINAL SUM',
+            @Message = @Message;
+
+        COMMIT TRANSACTION;
+
+        EXEC dbo.sp_Demo_Log
+            @Scenario = @Scenario,
+            @Actor = @Actor,
+            @Action = N'COMMIT',
+            @Message = N'FIX: COMMIT';
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0
+            ROLLBACK TRANSACTION;
+
+        SET @Message = CONCAT(N'FIX ERROR: ', ERROR_MESSAGE());
+
+        EXEC dbo.sp_Demo_Log
+            @Scenario = @Scenario,
+            @Actor = @Actor,
+            @Action = N'ROLLBACK',
+            @Message = @Message;
+
+        SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+        THROW;
+    END CATCH;
+
+    -- Đưa mức cô lập trở về mặc định của connection
+    SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+END;
+GO
+
+-- ============================================================
+-- sp_Demo_Phantom_Transfer: Hỗ trợ demo tương tranh Phantom Read
+-- ============================================================
+CREATE OR ALTER PROCEDURE dbo.sp_Demo_Phantom_Transfer
+    @FromBankAccountId UNIQUEIDENTIFIER,
+    @ToBankAccountId   UNIQUEIDENTIFIER,
+    @Amount            DECIMAL(18,2),
+    @CreatedByUserId   UNIQUEIDENTIFIER,
+    @Description       NVARCHAR(500),
+    @Delay             CHAR(8),
+    @IsFix             INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    -- All DECLARE statements at the very top
+    DECLARE @Scenario NVARCHAR(50);
+    DECLARE @Actor NVARCHAR(20);
+    DECLARE @Message NVARCHAR(500);
+    DECLARE @DailyLimit DECIMAL(18,2);
+    DECLARE @TodayTotal DECIMAL(18,2);
+    DECLARE @StartOfDay DATETIME2(3);
+    DECLARE @EndOfDay DATETIME2(3);
+    DECLARE @Prefix NVARCHAR(10);
+    DECLARE @BeginMsg NVARCHAR(100);
+    DECLARE @ReadMsg NVARCHAR(100);
+    DECLARE @FinalTotal DECIMAL(18,2);
+
+    -- Assignments
+    SET @Scenario = N'PHANTOM';
+    SET @DailyLimit = 100000000;
+    SET @Actor = CONCAT(N'Session ', @@SPID);
+    SET @StartOfDay = CONVERT(DATETIME2(3), CONVERT(DATE, SYSDATETIME()));
+    SET @EndOfDay = DATEADD(DAY, 1, @StartOfDay);
+    IF @IsFix = 1
+    BEGIN
+        SET @Prefix = N'FIX';
+        SET @BeginMsg = N'FIX: BEGIN TRANSACTION with SERIALIZABLE';
+        SET @ReadMsg = N'FIX: Before reading today SUM with UPDLOCK, HOLDLOCK';
+    END
+    ELSE
+    BEGIN
+        SET @Prefix = N'BAD';
+        SET @BeginMsg = N'BAD: BEGIN TRANSACTION';
+        SET @ReadMsg = N'BAD: Before reading today transfer SUM';
+    END
+
+    IF @IsFix = 1
+    BEGIN
+        SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+    END
+
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        -- 3. Read Today's Total
+        IF @IsFix = 1
+        BEGIN
+            SELECT @TodayTotal = ISNULL(SUM(Amount), 0)
+            FROM dbo.Transactions WITH (UPDLOCK, HOLDLOCK, INDEX(IX_Transactions_DailyLimitDemo))
+            WHERE FromBankAccountId = @FromBankAccountId
+              AND Type = 'transfer'
+              AND Status = 'success'
+              AND CreatedAt >= @StartOfDay
+              AND CreatedAt < @EndOfDay
+              AND Description LIKE N'PHANTOM_LIMIT_DEMO|%';
+        END
+        ELSE
+        BEGIN
+            SELECT @TodayTotal = ISNULL(SUM(Amount), 0)
+            FROM dbo.Transactions
+            WHERE FromBankAccountId = @FromBankAccountId
+              AND Type = 'transfer'
+              AND Status = 'success'
+              AND CreatedAt >= @StartOfDay
+              AND CreatedAt < @EndOfDay
+              AND Description LIKE N'PHANTOM_LIMIT_DEMO|%';
+        END
+
+        -- 4. Log TodayTotal Read
+        SET @Message = @Prefix + N': TodayTotal read = ' + CONVERT(NVARCHAR(50), CAST(@TodayTotal AS MONEY), 1);
+        EXEC dbo.sp_Demo_Log
+            @Scenario = @Scenario,
+            @Actor = @Actor,
+            @Action = N'READ',
+            @Message = @Message;
+
+        -- 5. Log Before WAITFOR
+        SET @Message = @Prefix + N': Before WAITFOR ' + @Delay;
+        EXEC dbo.sp_Demo_Log
+            @Scenario = @Scenario,
+            @Actor = @Actor,
+            @Action = N'WAITFOR',
+            @Message = @Message;
+
+        -- 6. WAITFOR DELAY
+        WAITFOR DELAY @Delay;
+
+        -- 7. Log After WAITFOR
+        SET @Message = @Prefix + N': After WAITFOR';
+        EXEC dbo.sp_Demo_Log
+            @Scenario = @Scenario,
+            @Actor = @Actor,
+            @Action = N'AFTER WAITFOR',
+            @Message = @Message;
+
+        -- 8. Limit Check
+        IF @TodayTotal + @Amount > @DailyLimit
+        BEGIN
+            SET @Message = @Prefix + N': Limit check FAILED. No insert.';
+            EXEC dbo.sp_Demo_Log
+                @Scenario = @Scenario,
+                @Actor = @Actor,
+                @Action = N'LIMIT CHECK',
+                @Message = @Message;
+
+            ;THROW 51001, N'Vượt hạn mức chuyển khoản trong ngày (100tr)', 1;
+        END
+
+        SET @Message = @Prefix + N': Limit check PASSED. Before INSERT';
+        EXEC dbo.sp_Demo_Log
+            @Scenario = @Scenario,
+            @Actor = @Actor,
+            @Action = N'LIMIT CHECK',
+            @Message = @Message;
+
+        -- 9. Execute the REAL sp_Transfer
+        EXEC dbo.sp_Transfer
+            @FromBankAccountId = @FromBankAccountId,
+            @ToBankAccountId = @ToBankAccountId,
+            @Amount = @Amount,
+            @CreatedByUserId = @CreatedByUserId,
+            @Description = @Description;
+
+        -- 10. Log SUCCESS INSERT
+        SET @Message = @Prefix + N': Inserted transfer amount = ' + CONVERT(NVARCHAR(50), CAST(@Amount AS MONEY), 1);
+        EXEC dbo.sp_Demo_Log
+            @Scenario = @Scenario,
+            @Actor = @Actor,
+            @Action = N'INSERT',
+            @Message = @Message;
+
+        -- 11. Final Sum check and log
+        SELECT @FinalTotal = ISNULL(SUM(Amount), 0)
+        FROM dbo.Transactions
+        WHERE FromBankAccountId = @FromBankAccountId
+          AND Type = 'transfer'
+          AND Status = 'success'
+          AND CreatedAt >= @StartOfDay
+          AND CreatedAt < @EndOfDay
+          AND Description LIKE N'PHANTOM_LIMIT_DEMO|%';
+
+        SET @Message = @Prefix + N': FinalTotal visible inside transaction = ' + CONVERT(NVARCHAR(50), CAST(@FinalTotal AS MONEY), 1);
+        EXEC dbo.sp_Demo_Log
+            @Scenario = @Scenario,
+            @Actor = @Actor,
+            @Action = N'FINAL SUM',
+            @Message = @Message;
+
+        COMMIT TRANSACTION;
+
+        -- 12. Log COMMIT
+        SET @Message = @Prefix + N': COMMIT';
+        EXEC dbo.sp_Demo_Log
+            @Scenario = @Scenario,
+            @Actor = @Actor,
+            @Action = N'COMMIT',
+            @Message = @Message;
+
+        IF @IsFix = 1
+        BEGIN
+            SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+        END
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0
+            ROLLBACK TRANSACTION;
+
+        IF @IsFix = 1
+        BEGIN
+            SET @Message = N'FIX ERROR: ' + ERROR_MESSAGE();
+        END
+        ELSE
+        BEGIN
+            SET @Message = N'BAD ERROR: ' + ERROR_MESSAGE();
+        END
+
+        EXEC dbo.sp_Demo_Log
+            @Scenario = @Scenario,
+            @Actor = @Actor,
+            @Action = N'ROLLBACK',
+            @Message = @Message;
+
+        IF @IsFix = 1
+        BEGIN
+            SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+        END
+
+        ;THROW;
+    END CATCH
+END
+GO

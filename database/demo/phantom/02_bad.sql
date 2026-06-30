@@ -1,15 +1,16 @@
 USE banking_transaction;
 GO
 
-CREATE OR ALTER PROCEDURE dbo.sp_Demo_Phantom_Limit_Bad_Transfer
+CREATE OR ALTER PROCEDURE dbo.sp_Demo_Phantom_Bad
     @Delay CHAR(8) = '00:00:08'
 AS
 BEGIN
     SET NOCOUNT ON;
     SET XACT_ABORT ON;
 
-    DECLARE @DemoName NVARCHAR(100) = N'PHANTOM_LIMIT_BAD';
-    DECLARE @Message NVARCHAR(1000);
+    DECLARE @Scenario NVARCHAR(50) = N'PHANTOM';
+    DECLARE @Actor NVARCHAR(20) = CONCAT(N'Session ', @@SPID);
+    DECLARE @Message NVARCHAR(500);
 
     DECLARE @DailyLimit DECIMAL(18,2) = 100000000;
     DECLARE @TransferAmount DECIMAL(18,2) = 15000000;
@@ -27,6 +28,7 @@ BEGIN
     DECLARE @EndOfDay DATETIME2(3) =
         DATEADD(DAY, 1, @StartOfDay);
 
+    -- Tìm dữ liệu mẫu
     SELECT TOP 1 @FromAccountId = BankAccountId
     FROM dbo.BankAccounts
     WHERE Status = 'active'
@@ -50,15 +52,20 @@ BEGIN
 
     BEGIN TRY
         EXEC dbo.sp_Demo_Log
-            @DemoName = @DemoName,
+            @Scenario = @Scenario,
+            @Actor = @Actor,
+            @Action = N'BEGIN',
             @Message = N'BAD: BEGIN TRANSACTION';
 
         BEGIN TRANSACTION;
 
         EXEC dbo.sp_Demo_Log
-            @DemoName = @DemoName,
+            @Scenario = @Scenario,
+            @Actor = @Actor,
+            @Action = N'READ',
             @Message = N'BAD: Before reading today transfer SUM';
 
+        -- Đọc tổng tiền chuyển hôm nay dưới mức Read Committed
         SELECT @TodayTotal = ISNULL(SUM(Amount), 0)
         FROM dbo.Transactions
         WHERE FromBankAccountId = @FromAccountId
@@ -74,25 +81,35 @@ BEGIN
         );
 
         EXEC dbo.sp_Demo_Log
-            @DemoName = @DemoName,
+            @Scenario = @Scenario,
+            @Actor = @Actor,
+            @Action = N'READ',
             @Message = @Message;
 
         SET @Message = CONCAT(N'BAD: Before WAITFOR ', @Delay);
 
         EXEC dbo.sp_Demo_Log
-            @DemoName = @DemoName,
+            @Scenario = @Scenario,
+            @Actor = @Actor,
+            @Action = N'WAITFOR',
             @Message = @Message;
 
+        -- Chờ để tạo cơ hội đồng thời
         WAITFOR DELAY @Delay;
 
         EXEC dbo.sp_Demo_Log
-            @DemoName = @DemoName,
+            @Scenario = @Scenario,
+            @Actor = @Actor,
+            @Action = N'AFTER WAITFOR',
             @Message = N'BAD: After WAITFOR';
 
+        -- Kiểm tra hạn mức dựa trên tổng cũ đã đọc
         IF @TodayTotal + @TransferAmount <= @DailyLimit
         BEGIN
             EXEC dbo.sp_Demo_Log
-                @DemoName = @DemoName,
+                @Scenario = @Scenario,
+                @Actor = @Actor,
+                @Action = N'LIMIT CHECK',
                 @Message = N'BAD: Limit check PASSED based on old SUM. Before INSERT';
 
             INSERT INTO dbo.Transactions (
@@ -126,16 +143,21 @@ BEGIN
             );
 
             EXEC dbo.sp_Demo_Log
-                @DemoName = @DemoName,
+                @Scenario = @Scenario,
+                @Actor = @Actor,
+                @Action = N'INSERT',
                 @Message = @Message;
         END
         ELSE
         BEGIN
             EXEC dbo.sp_Demo_Log
-                @DemoName = @DemoName,
+                @Scenario = @Scenario,
+                @Actor = @Actor,
+                @Action = N'LIMIT CHECK',
                 @Message = N'BAD: Limit check FAILED. No insert.';
         END;
 
+        -- Đọc lại tổng tiền chuyển để ghi log kiểm tra
         SELECT @FinalTotal = ISNULL(SUM(Amount), 0)
         FROM dbo.Transactions
         WHERE FromBankAccountId = @FromAccountId
@@ -151,13 +173,17 @@ BEGIN
         );
 
         EXEC dbo.sp_Demo_Log
-            @DemoName = @DemoName,
+            @Scenario = @Scenario,
+            @Actor = @Actor,
+            @Action = N'FINAL SUM',
             @Message = @Message;
 
         COMMIT TRANSACTION;
 
         EXEC dbo.sp_Demo_Log
-            @DemoName = @DemoName,
+            @Scenario = @Scenario,
+            @Actor = @Actor,
+            @Action = N'COMMIT',
             @Message = N'BAD: COMMIT';
     END TRY
     BEGIN CATCH
@@ -167,7 +193,9 @@ BEGIN
         SET @Message = CONCAT(N'BAD ERROR: ', ERROR_MESSAGE());
 
         EXEC dbo.sp_Demo_Log
-            @DemoName = @DemoName,
+            @Scenario = @Scenario,
+            @Actor = @Actor,
+            @Action = N'ROLLBACK',
             @Message = @Message;
 
         THROW;

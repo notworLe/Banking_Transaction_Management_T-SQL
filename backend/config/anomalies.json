@@ -1,0 +1,15 @@
+{
+  "phantom": {
+    "displayName": "Phantom Read",
+    "description": "Lỗi đọc bóng ma (Phantom Read) xảy ra khi một giao dịch đọc một tập hợp các hàng thỏa mãn điều kiện tìm kiếm, sau đó một giao dịch khác chèn các hàng mới thỏa mãn điều kiện đó và commit. Khi giao dịch đầu tiên đọc lại với cùng điều kiện, nó sẽ thấy những hàng mới (bóng ma) xuất hiện.",
+    "scenario": "1. Session 1 bắt đầu giao dịch và đọc tổng số tiền giao dịch trong ngày (được reset về 80tr).\n2. Session 2 thực hiện giao dịch chuyển khoản 15tr đồng thời.\n3. Session 1 kiểm tra hạn mức (80tr + 15tr <= 100tr) và cho phép chèn giao dịch mới.\n4. Do không dùng cơ chế khoá phạm vi (Range Lock), cả 2 chèn thành công làm tổng tiền ngày vượt hạn mức (110tr).",
+    "expected_result": "Ở chế độ lỗi (Bad Run), hai giao dịch chạy đồng thời chèn 2 bản ghi mới độc lập làm vượt quá hạn mức ngày (110.000.000đ). Ở chế độ sửa lỗi (Fix Run), việc sử dụng isolation level SERIALIZABLE hoặc khóa phạm vi (Range Lock) sẽ chặn/hoãn giao dịch chèn đồng thời cho đến khi giao dịch đầu tiên kết thúc.",
+    "learning": "Sử dụng mức cô lập cao nhất `SERIALIZABLE` hoặc các gợi ý khóa như `HOLDLOCK`, `UPDLOCK` trên các chỉ mục phù hợp để thiết lập khóa phạm vi (Range Lock), ngăn chặn việc chèn các bản ghi bóng ma trong suốt thời gian giao dịch đang diễn ra.",
+    "procedures": {
+      "reset": "dbo.sp_Demo_Phantom_Reset",
+      "bad": "dbo.sp_Demo_Phantom_Bad",
+      "fix": "dbo.sp_Demo_Phantom_Fix",
+      "logs": "dbo.sp_Demo_GetLogs"
+    }
+  }
+}
