@@ -96,6 +96,8 @@ def get_transactions(user=Depends(require_role("Customer"))):
 
 @router.post("/transactions/transfer")
 def transfer(form: TransferForm, user=Depends(require_role("Customer"))):
+    import traceback
+    print(f"[API /transactions/transfer] Request body: from_account_id={form.from_account_id}, to_account_number={form.to_account_number}, amount={form.amount}, description={form.description}")
     conn = get_conn()
     cur = conn.cursor()
     try:
@@ -106,6 +108,7 @@ def transfer(form: TransferForm, user=Depends(require_role("Customer"))):
             WHERE ba.BankAccountId = ? AND c.UserId = ? AND ba.Status = 'active'
         """, form.from_account_id, user["user_id"])
         if not cur.fetchone():
+            print(f"[API /transactions/transfer] Validation failed: invalid source account {form.from_account_id} for user {user['user_id']}")
             raise HTTPException(status_code=403, detail="Tài khoản không hợp lệ")
 
         # Get destination account
@@ -113,16 +116,51 @@ def transfer(form: TransferForm, user=Depends(require_role("Customer"))):
                     form.to_account_number)
         to_row = cur.fetchone()
         if not to_row:
+            print(f"[API /transactions/transfer] Validation failed: destination account {form.to_account_number} not found or inactive")
             raise HTTPException(status_code=404, detail="Tài khoản đích không tồn tại hoặc bị khóa")
 
-        cur.execute("EXEC sp_Transfer ?, ?, ?, ?, ?",
-                    form.from_account_id, str(to_row[0]),
-                    form.amount, user["user_id"], form.description)
+        # Check if this is a phantom read demo transaction
+        is_demo = False
+        if form.description and form.description.startswith("PHANTOM_LIMIT_DEMO|"):
+            parts = form.description.split("|")
+            if len(parts) >= 3:
+                type_name = parts[1]  # "BAD" or "FIX"
+                delay_str = parts[2]  # e.g., "00:00:08" or "00:00:02"
+                is_fix = 1 if type_name == "FIX" else 0
+                is_demo = True
+
+        if is_demo:
+            print(f"[API /transactions/transfer] Calling sp_Demo_Phantom_Transfer (is_fix={is_fix}, delay={delay_str})")
+            # Query SPID
+            cur.execute("SELECT @@SPID")
+            spid = cur.fetchone()[0]
+            actor = f"Session {spid}"
+            
+            # Log BEGIN and READ
+            begin_msg = f"FIX: BEGIN TRANSACTION with SERIALIZABLE" if is_fix else "BAD: BEGIN TRANSACTION"
+            read_msg = f"FIX: Before reading today SUM with UPDLOCK, HOLDLOCK" if is_fix else "BAD: Before reading today transfer SUM"
+            
+            cur.execute("EXEC dbo.sp_Demo_Log ?, ?, ?, ?", "PHANTOM", actor, "BEGIN", begin_msg)
+            cur.execute("EXEC dbo.sp_Demo_Log ?, ?, ?, ?", "PHANTOM", actor, "READ", read_msg)
+            conn.commit()  # commit immediately so they survive rollback
+            
+            cur.execute("EXEC sp_Demo_Phantom_Transfer ?, ?, ?, ?, ?, ?, ?",
+                        form.from_account_id, str(to_row[0]),
+                        form.amount, user["user_id"], form.description,
+                        delay_str, is_fix)
+        else:
+            print(f"[API /transactions/transfer] Calling sp_Transfer")
+            cur.execute("EXEC sp_Transfer ?, ?, ?, ?, ?",
+                        form.from_account_id, str(to_row[0]),
+                        form.amount, user["user_id"], form.description)
         conn.commit()
         return {"message": "Chuyển tiền thành công"}
-    except HTTPException:
+    except HTTPException as e:
+        print(f"[API /transactions/transfer] HTTPException: status_code={e.status_code}, detail={e.detail}")
         raise
     except Exception as e:
+        print(f"[API /transactions/transfer] Exception: {e}")
+        traceback.print_exc()
         conn.rollback()
         raise HTTPException(status_code=400, detail=str(e))
     finally:

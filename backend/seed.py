@@ -8,16 +8,24 @@ import pyodbc
 import os
 from jwt_utils import hash_password
 
-DB_SERVER   = os.getenv("DB_SERVER", "sqlserver")
+DB_SERVER   = os.getenv("DB_SERVER", "localhost")
 DB_NAME     = os.getenv("DB_NAME", "banking_transaction")
 DB_USER     = os.getenv("DB_USER", "sa")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "BankingDB@2024")
+DB_DRIVER   = os.getenv("DB_DRIVER", "ODBC Driver 18 for SQL Server")
 
-CONN_STR = (
-    f"DRIVER={{ODBC Driver 18 for SQL Server}};"
-    f"SERVER={DB_SERVER};DATABASE={DB_NAME};"
-    f"UID={DB_USER};PWD={DB_PASSWORD};TrustServerCertificate=yes;"
-)
+if os.getenv("DB_TRUSTED", "").lower() == "yes":
+    CONN_STR = (
+        f"DRIVER={{{DB_DRIVER}}};"
+        f"SERVER={DB_SERVER};DATABASE={DB_NAME};"
+        f"Trusted_Connection=yes;TrustServerCertificate=yes;"
+    )
+else:
+    CONN_STR = (
+        f"DRIVER={{{DB_DRIVER}}};"
+        f"SERVER={DB_SERVER};DATABASE={DB_NAME};"
+        f"UID={DB_USER};PWD={DB_PASSWORD};TrustServerCertificate=yes;"
+    )
 
 
 def wait_for_db(retries=15, delay=5):
