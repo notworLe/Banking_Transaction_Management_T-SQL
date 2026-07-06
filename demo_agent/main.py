@@ -2,6 +2,7 @@ import sys
 import os
 import inspect
 import tkinter as tk
+import time
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
@@ -10,9 +11,12 @@ from pydantic import BaseModel
 # -----------------------------------------------------------------------------
 from playwright._impl._browser_type import BrowserType
 from playwright._impl._browser import Browser
+from playwright._impl._browser_context import BrowserContext
+from playwright._impl._page import Page
 
 original_launch = BrowserType.launch
 original_new_context = Browser.new_context
+original_goto = Page.goto
 
 def patched_launch(self, *args, **kwargs):
     # Only apply positioning if running headed (headless=False)
@@ -66,10 +70,24 @@ def patched_new_context(self, *args, **kwargs):
     kwargs["noViewport"] = True
     return original_new_context(self, *args, **kwargs)
 
+def patched_goto(self, url, *args, **kwargs):
+    if "3000" in url:
+        print(f"[DemoAgent] Delaying 3 seconds before navigating to {url}...")
+        time.sleep(3)
+    return original_goto(self, url, *args, **kwargs)
+
+async def async_no_op(*args, **kwargs):
+    print("[DemoAgent] Intercepted close call: keeping browser/context open.")
+    pass
+
 # Apply patches
 BrowserType.launch = patched_launch
 Browser.new_context = patched_new_context
-print("[DemoAgent] Playwright window layout monkey-patches successfully applied.")
+Page.goto = patched_goto
+BrowserContext.close = async_no_op
+Browser.close = async_no_op
+
+print("[DemoAgent] Playwright window layout & persistence monkey-patches successfully applied.")
 
 # -----------------------------------------------------------------------------
 # REST API SETUP AND ORCHESTRATION
@@ -77,7 +95,58 @@ print("[DemoAgent] Playwright window layout monkey-patches successfully applied.
 # Append sibling backend directory to Python path to import existing playwright_runner
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + "/backend")
 
+import threading
 try:
+    import automation.playwright_runner as pr
+    
+    # Custom dict subclass to block the thread inside run_session_thread
+    # before it exits the "with sync_playwright() as p" context.
+    class BlockedResultsDict(dict):
+        def __setitem__(self, key, value):
+            # First set the item so execute_automation_flow receives the notification
+            super().__setitem__(key, value)
+            
+            # Now, sleep forever to keep the browser context active
+            print(f"[DemoAgent] Thread {key} finished task. Blocking inside try/catch context to keep browser open...")
+            while True:
+                time.sleep(1)
+
+    def patched_execute_automation_flow(type_name: str, delay1: str, delay2: str):
+        print(f"[DemoAgent] Launching concurrent automation flow via patched runner for {type_name}...")
+        
+        barrier = threading.Barrier(2)
+        results = BlockedResultsDict()  # Use our custom dictionary subclass!
+        
+        desc1 = f"PHANTOM_LIMIT_DEMO|{type_name.upper()}|{delay1}|1"
+        desc2 = f"PHANTOM_LIMIT_DEMO|{type_name.upper()}|{delay2}|2"
+        
+        t1 = threading.Thread(
+            target=pr.run_session_thread,  # Direct target to original run_session_thread
+            args=(1, "nguyen_van_a", "Cust@111", "9704002000001", 15000000, desc1, barrier, results),
+            daemon=True
+        )
+        t2 = threading.Thread(
+            target=pr.run_session_thread,
+            args=(2, "nguyen_van_a", "Cust@111", "9704002000001", 15000000, desc2, barrier, results),
+            daemon=True
+        )
+        
+        t1.start()
+        t2.start()
+        
+        # Wait until both threads have populated the results dict
+        while len(results) < 2:
+            time.sleep(0.5)
+            
+        # Check results and raise exceptions if any occurred
+        for tid, res in results.items():
+            if isinstance(res, Exception):
+                raise res
+
+    # Apply patched execute_automation_flow to playwright_runner
+    pr.execute_automation_flow = patched_execute_automation_flow
+    print("[DemoAgent] Playwright runner threading patches successfully applied.")
+
     from automation.playwright_runner import run_phantom_bad, run_phantom_fix
 except ImportError as e:
     print(f"Error importing playwright_runner: {e}")
