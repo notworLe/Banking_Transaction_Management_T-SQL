@@ -126,13 +126,101 @@ CREATE TABLE LoginLogs (
 GO
  
 -- ============================================================
--- SEED DATA (Roles only - Users seeded by Python seed.py with bcrypt)
+-- SEED DATA
 -- ============================================================
 
 -- ── Roles ────────────────────────────────────────────────────
-INSERT INTO Roles (RoleName) VALUES ('Admin');
-INSERT INTO Roles (RoleName) VALUES ('Banker');
-INSERT INTO Roles (RoleName) VALUES ('Customer');
+DECLARE @RoleAdmin    UNIQUEIDENTIFIER = NEWID();
+DECLARE @RoleBanker   UNIQUEIDENTIFIER = NEWID();
+DECLARE @RoleCustomer UNIQUEIDENTIFIER = NEWID();
+
+INSERT INTO Roles (RoleId, RoleName) VALUES
+    (@RoleAdmin,    'Admin'),
+    (@RoleBanker,   'Banker'),
+    (@RoleCustomer, 'Customer');
+
+-- ── Users ─────────────────────────────────────────────────────
+-- PasswordHash = bcrypt của "Admin@123", "Banker@123", "Cust@111/222/333"
+-- (placeholder hash - backend xác thực qua sp_Login / Python bcrypt)
+DECLARE @UAdmin   UNIQUEIDENTIFIER = NEWID();
+DECLARE @UBanker1 UNIQUEIDENTIFIER = NEWID();
+DECLARE @UBanker2 UNIQUEIDENTIFIER = NEWID();
+DECLARE @UCust1   UNIQUEIDENTIFIER = NEWID();
+DECLARE @UCust2   UNIQUEIDENTIFIER = NEWID();
+DECLARE @UCust3   UNIQUEIDENTIFIER = NEWID();
+
+-- Passwords: tất cả tài khoản đều dùng password = 123123
+INSERT INTO Users (UserId, RoleId, Username, PasswordHash, Status, LastLoginAt) VALUES
+    (@UAdmin,   @RoleAdmin,    'admin',        '$2b$12$AqEjkux9QyXZHPkZnX06MeQ5OPRS9pxfrOo7id2jtSy2iMTnUDbTi', 'active', '2025-06-05 08:00:00'),
+    (@UBanker1, @RoleBanker,   'banker_nam',   '$2b$12$AqEjkux9QyXZHPkZnX06MeQ5OPRS9pxfrOo7id2jtSy2iMTnUDbTi', 'active', '2025-06-05 08:15:00'),
+    (@UBanker2, @RoleBanker,   'banker_lan',   '$2b$12$AqEjkux9QyXZHPkZnX06MeQ5OPRS9pxfrOo7id2jtSy2iMTnUDbTi', 'locked', '2025-05-20 09:00:00'),
+    (@UCust1,   @RoleCustomer, 'nguyen_van_a', '$2b$12$AqEjkux9QyXZHPkZnX06MeQ5OPRS9pxfrOo7id2jtSy2iMTnUDbTi', 'active', '2025-06-05 10:00:00'),
+    (@UCust2,   @RoleCustomer, 'tran_thi_b',   '$2b$12$AqEjkux9QyXZHPkZnX06MeQ5OPRS9pxfrOo7id2jtSy2iMTnUDbTi', 'active', '2025-06-04 14:30:00'),
+    (@UCust3,   @RoleCustomer, 'le_van_c',     '$2b$12$AqEjkux9QyXZHPkZnX06MeQ5OPRS9pxfrOo7id2jtSy2iMTnUDbTi', 'locked', '2025-05-01 11:00:00');
+
+-- ── Bankers ───────────────────────────────────────────────────
+DECLARE @Banker1 UNIQUEIDENTIFIER = NEWID();
+DECLARE @Banker2 UNIQUEIDENTIFIER = NEWID();
+
+INSERT INTO Bankers (BankerId, UserId, EmployeeCode, FullName, Email, PhoneNumber) VALUES
+    (@Banker1, @UBanker1, 'EMP-001', N'Trần Văn Nam',   'nam.tran@vcb.vn',   '0901234567'),
+    (@Banker2, @UBanker2, 'EMP-002', N'Nguyễn Thị Lan', 'lan.nguyen@vcb.vn', '0912345678');
+
+-- ── Customers ─────────────────────────────────────────────────
+DECLARE @Cust1 UNIQUEIDENTIFIER = NEWID();
+DECLARE @Cust2 UNIQUEIDENTIFIER = NEWID();
+DECLARE @Cust3 UNIQUEIDENTIFIER = NEWID();
+
+INSERT INTO Customers (CustomerId, UserId, FullName, Email, PhoneNumber, Address, BirthDay) VALUES
+    (@Cust1, @UCust1, N'Nguyễn Văn A', 'a.nguyen@gmail.com', '0933111222', N'12 Lê Lợi, Q.1, TP.HCM',            '1995-03-15'),
+    (@Cust2, @UCust2, N'Trần Thị B',   'b.tran@gmail.com',   '0944222333', N'45 Trần Hưng Đạo, Hải Phòng',        '1998-07-22'),
+    (@Cust3, @UCust3, N'Lê Văn C',     'c.le@gmail.com',     '0955333444', N'78 Nguyễn Huệ, Đà Nẵng',             '1990-11-05');
+
+-- ── BankAccounts ──────────────────────────────────────────────
+DECLARE @Acc1A UNIQUEIDENTIFIER = NEWID();  -- Cust1 payment
+DECLARE @Acc1B UNIQUEIDENTIFIER = NEWID();  -- Cust1 saving
+DECLARE @Acc2A UNIQUEIDENTIFIER = NEWID();  -- Cust2 payment
+DECLARE @Acc3A UNIQUEIDENTIFIER = NEWID();  -- Cust3 debit (locked)
+
+INSERT INTO BankAccounts (BankAccountId, CustomerId, AccountNumber, AccountType, Balance, Status, OpenedAt) VALUES
+    (@Acc1A, @Cust1, '9704001000001', 'payment', 15000000.00, 'active', '2023-01-10 09:00:00'),
+    (@Acc1B, @Cust1, '9704001000002', 'saving',  50000000.00, 'active', '2023-06-01 10:00:00'),
+    (@Acc2A, @Cust2, '9704002000001', 'payment',  8500000.00, 'active', '2024-03-15 08:30:00'),
+    (@Acc3A, @Cust3, '9704003000001', 'debit',    2000000.00, 'locked', '2022-11-20 11:00:00');
+
+-- ── Transactions ──────────────────────────────────────────────
+INSERT INTO Transactions (FromBankAccountId, ToBankAccountId, CreatedByUserId, Type, Amount, Status, Description)
+VALUES (NULL,   @Acc1A, @UCust1, 'deposit',  5000000.00, 'success', N'Nạp tiền ATM');
+
+INSERT INTO Transactions (FromBankAccountId, ToBankAccountId, CreatedByUserId, Type, Amount, Status, Description)
+VALUES (@Acc1A, NULL,   @UCust1, 'withdraw', 1000000.00, 'success', N'Rút tiền quầy');
+
+INSERT INTO Transactions (FromBankAccountId, ToBankAccountId, CreatedByUserId, Type, Amount, Status, Description)
+VALUES (@Acc1A, @Acc2A, @UCust1, 'transfer', 2000000.00, 'success', N'Chuyển tiền cho bạn B');
+
+INSERT INTO Transactions (FromBankAccountId, ToBankAccountId, CreatedByUserId, Type, Amount, Status, Description)
+VALUES (@Acc2A, @Acc1A, @UCust2, 'transfer',  500000.00, 'pending', N'Chuyển lại tiền');
+
+INSERT INTO Transactions (FromBankAccountId, ToBankAccountId, CreatedByUserId, Type, Amount, Status, Description)
+VALUES (@Acc3A, NULL,   @UCust3, 'withdraw', 5000000.00, 'failed',  N'Số dư không đủ');
+
+-- ── AuditLogs ─────────────────────────────────────────────────
+INSERT INTO AuditLogs (UserId, ActionType, TargetTable, TargetId, Description) VALUES
+    (@UAdmin,   'CREATE_BANKER',  'Bankers',      @Banker1, N'Admin tạo tài khoản banker EMP-001'),
+    (@UAdmin,   'CREATE_BANKER',  'Bankers',      @Banker2, N'Admin tạo tài khoản banker EMP-002'),
+    (@UAdmin,   'LOCK_USER',      'Users',        @UBanker2, N'Admin khoá banker EMP-002'),
+    (@UBanker1, 'CREATE_ACCOUNT', 'BankAccounts', @Acc1A,   N'Banker tạo tài khoản thanh toán cho Nguyễn Văn A'),
+    (@UBanker1, 'LOCK_ACCOUNT',   'BankAccounts', @Acc3A,   N'Banker khoá tài khoản của Lê Văn C theo yêu cầu'),
+    (@UBanker1, 'VIEW_CUSTOMER',  'Customers',    @Cust2,   N'Banker xem thông tin Trần Thị B');
+
+-- ── LoginLogs ─────────────────────────────────────────────────
+INSERT INTO LoginLogs (UserId, UserName, LoginTime, LogoutTime, LoginStatus, IPAddress) VALUES
+    (@UAdmin,   'admin',        '2025-06-05 08:00:00', '2025-06-05 11:00:00', 'success', '192.168.1.1'),
+    (@UBanker1, 'banker_nam',   '2025-06-05 08:15:00', '2025-06-05 17:30:00', 'success', '192.168.1.10'),
+    (@UCust1,   'nguyen_van_a', '2025-06-05 10:00:00', '2025-06-05 10:45:00', 'success', '14.232.0.1'),
+    (@UCust1,   'nguyen_van_a', '2025-06-04 09:00:00', NULL,                  'failed',  '14.232.0.1'),
+    (@UCust2,   'tran_thi_b',   '2025-06-04 14:30:00', '2025-06-04 15:00:00', 'success', '27.65.10.5'),
+    (@UCust3,   'le_van_c',     '2025-05-01 11:00:00', '2025-05-01 11:02:00', 'success', '113.185.4.2');
 
 GO
 
