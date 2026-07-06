@@ -149,14 +149,14 @@ DECLARE @UCust1   UNIQUEIDENTIFIER = NEWID();
 DECLARE @UCust2   UNIQUEIDENTIFIER = NEWID();
 DECLARE @UCust3   UNIQUEIDENTIFIER = NEWID();
 
--- Passwords: tất cả tài khoản đều dùng password = 123123
+-- Passwords: admin=Admin@123 | banker_nam/banker_lan=Banker@123 | nguyen_van_a=Cust@111 | tran_thi_b=Cust@222 | le_van_c=Cust@333
 INSERT INTO Users (UserId, RoleId, Username, PasswordHash, Status, LastLoginAt) VALUES
-    (@UAdmin,   @RoleAdmin,    'admin',        '$2b$12$AqEjkux9QyXZHPkZnX06MeQ5OPRS9pxfrOo7id2jtSy2iMTnUDbTi', 'active', '2025-06-05 08:00:00'),
-    (@UBanker1, @RoleBanker,   'banker_nam',   '$2b$12$AqEjkux9QyXZHPkZnX06MeQ5OPRS9pxfrOo7id2jtSy2iMTnUDbTi', 'active', '2025-06-05 08:15:00'),
-    (@UBanker2, @RoleBanker,   'banker_lan',   '$2b$12$AqEjkux9QyXZHPkZnX06MeQ5OPRS9pxfrOo7id2jtSy2iMTnUDbTi', 'locked', '2025-05-20 09:00:00'),
-    (@UCust1,   @RoleCustomer, 'nguyen_van_a', '$2b$12$AqEjkux9QyXZHPkZnX06MeQ5OPRS9pxfrOo7id2jtSy2iMTnUDbTi', 'active', '2025-06-05 10:00:00'),
-    (@UCust2,   @RoleCustomer, 'tran_thi_b',   '$2b$12$AqEjkux9QyXZHPkZnX06MeQ5OPRS9pxfrOo7id2jtSy2iMTnUDbTi', 'active', '2025-06-04 14:30:00'),
-    (@UCust3,   @RoleCustomer, 'le_van_c',     '$2b$12$AqEjkux9QyXZHPkZnX06MeQ5OPRS9pxfrOo7id2jtSy2iMTnUDbTi', 'locked', '2025-05-01 11:00:00');
+    (@UAdmin,   @RoleAdmin,    'admin',        '$2b$12$NNhFElWSGbdai9kR/Epqjev.HgErRR0j3P85tImiFMcuRCQ8T0Wm.',  'active', '2025-06-05 08:00:00'),
+    (@UBanker1, @RoleBanker,   'banker_nam',   '$2b$12$YHwefJpLYFbjcs0tHCZMM.pOsFV7c.lbjRJtaa3ayQgw025IihnFK', 'active', '2025-06-05 08:15:00'),
+    (@UBanker2, @RoleBanker,   'banker_lan',   '$2b$12$YHwefJpLYFbjcs0tHCZMM.pOsFV7c.lbjRJtaa3ayQgw025IihnFK', 'locked', '2025-05-20 09:00:00'),
+    (@UCust1,   @RoleCustomer, 'nguyen_van_a', '$2b$12$4DTBQ0USePdF3fEC8LnAWezcqgjCj6EvqNLgeDGGjFTpgMOrE51dK', 'active', '2025-06-05 10:00:00'),
+    (@UCust2,   @RoleCustomer, 'tran_thi_b',   '$2b$12$BnoANF.eawK1tmqIUw732OfajuAIMuiNjFNuXG2ooP7vS6sjQ52lG', 'active', '2025-06-04 14:30:00'),
+    (@UCust3,   @RoleCustomer, 'le_van_c',     '$2b$12$JehHmEu04blFKnZnE8jA3.8lq6aifKXRlJcUE1ISkokW0TDx0igHe', 'locked', '2025-05-01 11:00:00');
 
 -- ── Bankers ───────────────────────────────────────────────────
 DECLARE @Banker1 UNIQUEIDENTIFIER = NEWID();
