@@ -26,7 +26,7 @@ class TransactionForm(BaseModel):
 
 
 @router.get("/customers")
-def get_customers(user=Depends(require_role("Banker"))):
+def get_customers(user=Depends(require_role("Banker", "Admin"))):
     conn = get_conn()
     cur = conn.cursor()
     try:
@@ -45,7 +45,7 @@ def get_customers(user=Depends(require_role("Banker"))):
 
 
 @router.get("/customers/{customer_id}")
-def get_customer_detail(customer_id: str, user=Depends(require_role("Banker"))):
+def get_customer_detail(customer_id: str, user=Depends(require_role("Banker", "Admin"))):
     conn = get_conn()
     cur = conn.cursor()
     try:
@@ -78,7 +78,7 @@ def get_customer_detail(customer_id: str, user=Depends(require_role("Banker"))):
 
 
 @router.post("/accounts", status_code=201)
-def create_account(form: CreateAccountForm, user=Depends(require_role("Banker"))):
+def create_account(form: CreateAccountForm, user=Depends(require_role("Banker", "Admin"))):
     conn = get_conn()
     cur = conn.cursor()
     try:
@@ -118,7 +118,7 @@ def create_account(form: CreateAccountForm, user=Depends(require_role("Banker"))
 
 @router.patch("/accounts/{account_id}/status")
 def update_account_status(account_id: str, form: UpdateAccountStatusForm,
-                          user=Depends(require_role("Banker"))):
+                          user=Depends(require_role("Banker", "Admin"))):
     conn = get_conn()
     cur = conn.cursor()
     try:
@@ -145,7 +145,7 @@ def update_account_status(account_id: str, form: UpdateAccountStatusForm,
 
 
 @router.post("/transactions")
-def perform_transaction(form: TransactionForm, user=Depends(require_role("Banker"))):
+def perform_transaction(form: TransactionForm, user=Depends(require_role("Banker", "Admin"))):
     conn = get_conn()
     cur = conn.cursor()
     try:
@@ -167,7 +167,7 @@ def perform_transaction(form: TransactionForm, user=Depends(require_role("Banker
 
 
 @router.get("/transactions")
-def get_transactions(user=Depends(require_role("Banker"))):
+def get_transactions(user=Depends(require_role("Banker", "Admin"))):
     conn = get_conn()
     cur = conn.cursor()
     try:
@@ -190,7 +190,7 @@ def get_transactions(user=Depends(require_role("Banker"))):
 
 
 @router.get("/accounts")
-def get_all_accounts(user=Depends(require_role("Banker"))):
+def get_all_accounts(user=Depends(require_role("Banker", "Admin"))):
     conn = get_conn()
     cur = conn.cursor()
     try:

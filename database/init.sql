@@ -325,15 +325,36 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
-    -- Xóa users demo (cascade xóa Customers, LoginLogs, AuditLogs liên quan)
-    -- Xóa theo đúng thứ tự FK
+    -- Xóa theo đúng thứ tự FK dependencies:
+    -- Transactions → BankAccounts → Customers → Users
+
+    -- 1. Xóa Transactions tham chiếu BankAccounts/Users của demo
+    DELETE FROM dbo.Transactions
+    WHERE FromBankAccountId IN (
+        SELECT ba.BankAccountId FROM dbo.BankAccounts ba
+        JOIN dbo.Customers c ON ba.CustomerId = c.CustomerId
+        JOIN dbo.Users u ON c.UserId = u.UserId
+        WHERE u.Username LIKE 'demo_%'
+    )
+    OR ToBankAccountId IN (
+        SELECT ba.BankAccountId FROM dbo.BankAccounts ba
+        JOIN dbo.Customers c ON ba.CustomerId = c.CustomerId
+        JOIN dbo.Users u ON c.UserId = u.UserId
+        WHERE u.Username LIKE 'demo_%'
+    )
+    OR CreatedByUserId IN (
+        SELECT UserId FROM dbo.Users WHERE Username LIKE 'demo_%'
+    );
+
+    -- 2. Xóa AuditLogs
     DELETE FROM dbo.AuditLogs
     WHERE UserId IN (SELECT UserId FROM dbo.Users WHERE Username LIKE 'demo_%');
 
+    -- 3. Xóa LoginLogs
     DELETE FROM dbo.LoginLogs
     WHERE UserId IN (SELECT UserId FROM dbo.Users WHERE Username LIKE 'demo_%');
 
-    -- Xóa BankAccounts của demo customers
+    -- 4. Xóa BankAccounts
     DELETE FROM dbo.BankAccounts
     WHERE CustomerId IN (
         SELECT c.CustomerId FROM dbo.Customers c
@@ -341,20 +362,23 @@ BEGIN
         WHERE u.Username LIKE 'demo_%'
     );
 
+    -- 5. Xóa Customers
     DELETE FROM dbo.Customers
     WHERE UserId IN (SELECT UserId FROM dbo.Users WHERE Username LIKE 'demo_%');
 
+    -- 6. Xóa Users
     DELETE FROM dbo.Users WHERE Username LIKE 'demo_%';
 
-    -- Xóa logs demo
+    -- 7. Clear demo logs
     EXEC dbo.sp_Demo_ClearLogs @Scenario = N'REGISTER';
 
     EXEC dbo.sp_Demo_Log
         @Scenario = N'REGISTER',
         @Actor    = N'System',
         @Action   = N'RESET',
-        @Message  = N'Reset hoàn tất. Sẵn sàng chạy demo.';
+        @Message  = N'Reset hoàn tất. Đã xóa tất cả demo users, transactions, accounts.';
 END;
+
 GO
 
 -- 2. BAD: Tạo tài khoản KHÔNG dùng TRANSACTION
@@ -386,8 +410,9 @@ BEGIN
                      CAST(@UserId AS NVARCHAR(36));
     END TRY
     BEGIN CATCH
+        DECLARE @ErrMsg1 NVARCHAR(1000) = N'[BAD] ❌ Bước 1 thất bại: ' + ERROR_MESSAGE();
         EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'ERROR',
-            @Message=N'[BAD] ❌ Bước 1 thất bại: ' + ERROR_MESSAGE();
+            @Message=@ErrMsg1;
         RETURN;
     END CATCH;
 
@@ -396,13 +421,14 @@ BEGIN
         INSERT INTO dbo.Customers (CustomerId, UserId, FullName, Email, PhoneNumber)
         VALUES (@CustomerId, @UserId, N'Demo User (BAD)', 'demo_bad@test.com', '0900000001');
 
+        DECLARE @Msg2 NVARCHAR(1000) = N'[BAD] ✅ Bước 2: INSERT Customers thành công → CustomerId = ' + CAST(@CustomerId AS NVARCHAR(36));
         EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'INSERT',
-            @Message=N'[BAD] ✅ Bước 2: INSERT Customers thành công → CustomerId = ' +
-                     CAST(@CustomerId AS NVARCHAR(36));
+            @Message=@Msg2;
     END TRY
     BEGIN CATCH
+        DECLARE @ErrMsg2 NVARCHAR(1000) = N'[BAD] ❌ Bước 2 thất bại: ' + ERROR_MESSAGE();
         EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'ERROR',
-            @Message=N'[BAD] ❌ Bước 2 thất bại: ' + ERROR_MESSAGE();
+            @Message=@ErrMsg2;
         RETURN;
     END CATCH;
 
@@ -416,12 +442,13 @@ BEGIN
         -- ↑ CHECK CONSTRAINT sẽ REJECT vì AccountType phải là payment/saving/debit
     END TRY
     BEGIN CATCH
+        DECLARE @ErrMsg3 NVARCHAR(1000) = N'[BAD] ❌ Bước 3 THẤT BẠI: ' + ERROR_MESSAGE();
         EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'ERROR',
-            @Message=N'[BAD] ❌ Bước 3 THẤT BẠI: ' + ERROR_MESSAGE();
+            @Message=@ErrMsg3;
 
+        DECLARE @Msg3 NVARCHAR(1000) = N'[BAD] ⚠️ KẾT QUẢ: User + Customer ĐÃ ĐƯỢC GHI vào DB nhưng KHÔNG có BankAccount! → Customer "mồ côi" không thể đăng nhập có tài khoản.';
         EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'RESULT',
-            @Message=N'[BAD] ⚠️ KẾT QUẢ: User + Customer ĐÃ ĐƯỢC GHI vào DB nhưng KHÔNG có BankAccount! ' +
-                     N'→ Customer "mồ côi" không thể đăng nhập có tài khoản.';
+            @Message=@Msg3;
     END CATCH;
 END;
 GO
@@ -463,8 +490,9 @@ BEGIN
         EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'INSERT',
             @Message=N'[FIX] ✅ Bước 2: INSERT Customers thành công';
 
+        DECLARE @MsgFix NVARCHAR(1000) = N'[FIX] ✅ Bước 3: INSERT BankAccounts thành công → Số TK: ' + @AccountNumber;
         EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'INSERT',
-            @Message=N'[FIX] ✅ Bước 3: INSERT BankAccounts thành công → Số TK: ' + @AccountNumber;
+            @Message=@MsgFix;
 
         EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'COMMIT',
             @Message=N'[FIX] ✅ COMMIT — Tất cả 3 bước thành công, dữ liệu được lưu hoàn chỉnh.';
@@ -474,9 +502,9 @@ BEGIN
 
     END TRY
     BEGIN CATCH
+        DECLARE @ErrFix NVARCHAR(1000) = N'[FIX] 🔄 ROLLBACK — Lỗi xảy ra: ' + ERROR_MESSAGE() + N' → TOÀN BỘ bị hoàn tác, DB vẫn sạch.';
         EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'ROLLBACK',
-            @Message=N'[FIX] 🔄 ROLLBACK — Lỗi xảy ra: ' + ERROR_MESSAGE() +
-                     N' → TOÀN BỘ bị hoàn tác, DB vẫn sạch.';
+            @Message=@ErrFix;
     END CATCH;
 END;
 GO

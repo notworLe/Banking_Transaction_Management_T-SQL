@@ -24,5 +24,18 @@
       "fix": "dbo.sp_Demo_Register_Fix",
       "logs": "dbo.sp_Demo_GetLogs"
     }
+  },
+  "statuslock": {
+    "displayName": "Non-repeatable - Giao dịch và Khóa tài khoản đồng thời",
+    "description": "Lỗi đọc không lặp lại (Non-repeatable Read) trên cột Status. Xảy ra khi một giao tác đọc trạng thái tài khoản là 'active' nhưng nhả khóa S ngay, tạo sơ hở cho giao tác khác chen vào đổi trạng thái thành 'locked'. Giao tác đầu tiếp tục thực thi và trừ tiền trên tài khoản đã bị đóng băng.",
+    "scenario": "1. [BAD] READ COMMITTED: T1 (Chuyển khoản) đọc Status='active', sau đó nhả khóa. T2 (Khóa TK) chen vào update Status='locked'. T1 tiếp tục trừ tiền → Lỗi nghiệp vụ nghiêm trọng.\n2. [FIX] Dùng UPDLOCK: T1 đọc Status WITH (UPDLOCK, ROWLOCK) và giữ khóa chữ U suốt giao dịch. T2 muốn đổi Status phải chờ T1 hoàn tất → Chuyển khoản an toàn trên TK active, khóa TK sau.",
+    "expected_result": "BAD Run: Tài khoản bị khóa (locked) nhưng tiền vẫn bị trừ thành công. FIX Run: T2 bị block chờ T1; giao dịch chuyển khoản kết thúc an toàn, sau đó tài khoản mới bị khóa.",
+    "learning": "Nghiệp vụ yêu cầu điều kiện (như trạng thái tài khoản) phải có hiệu lực tuyệt đối cho đến khi giao dịch hoàn tất. Sử dụng Lock Hint WITH (UPDLOCK, ROWLOCK) ngay tại câu lệnh SELECT kiểm tra trạng thái để khóa chặt dòng dữ liệu, ngăn chặn các tác vụ cập nhật chen ngang.",
+    "procedures": {
+      "reset": "dbo.sp_Demo_StatusLock_Reset",
+      "bad": "dbo.sp_Demo_StatusLock_Bad",
+      "fix": "dbo.sp_Demo_StatusLock_Fix",
+      "logs": "dbo.sp_Demo_GetLogs"
+    }
   }
 }

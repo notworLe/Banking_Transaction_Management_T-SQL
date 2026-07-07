@@ -149,6 +149,7 @@ try:
 
     from automation.playwright_runner import run_phantom_bad, run_phantom_fix
     from automation.register_runner import run_register_bad, run_register_fix
+    from automation.statuslock_runner import run_statuslock_bad, run_statuslock_fix
 except ImportError as e:
     print(f"Error importing automation modules: {e}")
     import traceback
@@ -163,12 +164,14 @@ class RunRequest(BaseModel):
 
 @app.post("/run")
 def run_demo(req: RunRequest):
-    print(f"[DemoAgent] Received run request: demo={req.demo}, mode={req.mode}")
+    print(f"[DemoAgent] Received run request: demo='{req.demo}', mode='{req.mode}'")
     
-    if req.demo not in ("phantom", "register"):
+    if req.demo not in ("phantom", "register", "statuslock"):
+        print(f"[DemoAgent] 400 Error: Unsupported demo {req.demo}")
         raise HTTPException(status_code=400, detail=f"Unsupported demo scenario: {req.demo}")
         
     if req.mode not in ("bad", "fix"):
+        print(f"[DemoAgent] 400 Error: Unsupported mode {req.mode}")
         raise HTTPException(status_code=400, detail=f"Unsupported mode: {req.mode}. Must be 'bad' or 'fix'.")
         
     try:
@@ -186,9 +189,17 @@ def run_demo(req: RunRequest):
             else:
                 print("[DemoAgent] Starting Register Run Fix demo...")
                 run_register_fix()
+        elif req.demo == "statuslock":
+            if req.mode == "bad":
+                print("[DemoAgent] Starting StatusLock Run Bad demo...")
+                run_statuslock_bad()
+            else:
+                print("[DemoAgent] Starting StatusLock Run Fix demo...")
+                run_statuslock_fix()
             
         print("[DemoAgent] Simulation completed successfully!")
         return {"status": "success", "message": f"Successfully completed {req.demo} in {req.mode} mode."}
     except Exception as e:
         print(f"[DemoAgent] Error during execution: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
