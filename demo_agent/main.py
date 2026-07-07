@@ -5,6 +5,7 @@ import tkinter as tk
 import time
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+from typing import Optional
 
 # -----------------------------------------------------------------------------
 # MONKEY-PATCHING PLAYWRIGHT TO MANAGE WINDOW LAYOUT
@@ -96,8 +97,10 @@ print("[DemoAgent] Playwright window layout & persistence monkey-patches success
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + "/backend")
 
 import threading
+
 try:
     import automation.playwright_runner as pr
+    import automation.deadlock_runner as dr
     
     # Custom dict subclass to block the thread inside run_session_thread
     # before it exits the "with sync_playwright() as p" context.
@@ -147,8 +150,55 @@ try:
     pr.execute_automation_flow = patched_execute_automation_flow
     print("[DemoAgent] Playwright runner threading patches successfully applied.")
 
+    def patched_execute_deadlock_flow(type_name: str, delay1: str, delay2: str, acc1_id: str, acc2_id: str):
+        print(f"[DemoAgent] Launching concurrent deadlock flow via patched runner...")
+        
+        barrier = threading.Barrier(2)
+        results = BlockedResultsDict()
+        
+        from database import get_conn
+        conn = get_conn()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT AccountNumber FROM dbo.BankAccounts WHERE BankAccountId = ?", acc1_id)
+            acc1_num = cursor.fetchone()[0]
+            cursor.execute("SELECT AccountNumber FROM dbo.BankAccounts WHERE BankAccountId = ?", acc2_id)
+            acc2_num = cursor.fetchone()[0]
+        finally:
+            cursor.close()
+            conn.close()
+
+        desc1 = f"DEADLOCK_DEMO|{type_name.upper()}|{delay1}|1|{acc1_id}|{acc2_id}"
+        desc2 = f"DEADLOCK_DEMO|{type_name.upper()}|{delay2}|2|{acc2_id}|{acc1_id}"
+        
+        t1 = threading.Thread(
+            target=dr.run_session_thread,
+            args=(1, "nguyen_van_a", "Cust@111", acc1_num, acc2_num, desc1, barrier, results),
+            daemon=True
+        )
+        t2 = threading.Thread(
+            target=dr.run_session_thread,
+            args=(2, "tran_thi_b", "Cust@222", acc2_num, acc1_num, desc2, barrier, results),
+            daemon=True
+        )
+        
+        t1.start()
+        t2.start()
+        
+        while len(results) < 2:
+            time.sleep(0.5)
+            
+        for tid, res in results.items():
+            if isinstance(res, Exception):
+                raise res
+
+    # Apply patched execute_automation_flow to deadlock_runner
+    dr.execute_automation_flow = patched_execute_deadlock_flow
+    print("[DemoAgent] Deadlock runner threading patches successfully applied.")
+
     from automation.playwright_runner import run_phantom_bad, run_phantom_fix
     from automation.register_runner import run_register_bad, run_register_fix
+    from automation.deadlock_runner import run_deadlock_bad, run_deadlock_fix
 except ImportError as e:
     print(f"Error importing automation modules: {e}")
     import traceback
@@ -160,12 +210,14 @@ app = FastAPI(title="Banking Transaction Management Demo Agent")
 class RunRequest(BaseModel):
     demo: str
     mode: str
+    acc1: Optional[str] = None
+    acc2: Optional[str] = None
 
 @app.post("/run")
 def run_demo(req: RunRequest):
     print(f"[DemoAgent] Received run request: demo={req.demo}, mode={req.mode}")
     
-    if req.demo not in ("phantom", "register"):
+    if req.demo not in ("phantom", "register", "deadlock"):
         raise HTTPException(status_code=400, detail=f"Unsupported demo scenario: {req.demo}")
         
     if req.mode not in ("bad", "fix"):
@@ -186,6 +238,15 @@ def run_demo(req: RunRequest):
             else:
                 print("[DemoAgent] Starting Register Run Fix demo...")
                 run_register_fix()
+        elif req.demo == "deadlock":
+            if not req.acc1 or not req.acc2:
+                raise HTTPException(status_code=400, detail="Missing acc1 or acc2 parameters for deadlock demo")
+            if req.mode == "bad":
+                print("[DemoAgent] Starting Deadlock Run Bad demo...")
+                run_deadlock_bad(req.acc1, req.acc2)
+            else:
+                print("[DemoAgent] Starting Deadlock Run Fix demo...")
+                run_deadlock_fix(req.acc1, req.acc2)
             
         print("[DemoAgent] Simulation completed successfully!")
         return {"status": "success", "message": f"Successfully completed {req.demo} in {req.mode} mode."}

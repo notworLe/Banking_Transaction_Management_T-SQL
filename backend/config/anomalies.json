@@ -24,5 +24,18 @@
       "fix": "dbo.sp_Demo_Register_Fix",
       "logs": "dbo.sp_Demo_GetLogs"
     }
+  },
+  "deadlock": {
+    "displayName": "Deadlock",
+    "description": "Deadlock xảy ra khi hai hay nhiều giao dịch đồng thời giữ khóa trên các tài nguyên khác nhau và mỗi bên đều muốn chiếm khóa trên tài nguyên của bên kia, dẫn đến việc chờ đợi lẫn nhau vô hạn. SQL Server sẽ tự động phát hiện và hủy (Rollback) một giao dịch để giải phóng tài nguyên.",
+    "scenario": "1. Banker 1 bắt đầu giao dịch, cập nhật số dư Tài khoản A và chờ.\n2. Banker 2 bắt đầu giao dịch, cập nhật số dư Tài khoản B và chờ.\n3. Banker 1 thức dậy và muốn cập nhật số dư Tài khoản B (bị block bởi Banker 2).\n4. Banker 2 thức dậy và muốn cập nhật số dư Tài khoản A (bị block bởi Banker 1) -> Tạo thành chu trình bế tắc (Deadlock).\n5. SQL Server phát hiện vòng chờ và chọn Banker làm nạn nhân (Deadlock Victim), tự động rollback giao dịch đó để giao dịch còn lại hoàn thành.",
+    "expected_result": "BAD Run: SQL Server báo lỗi 1205 (Deadlock Victim) ở một Session và rollback giao dịch đó, trong khi Session còn lại commit thành công. FIX Run: Không xảy ra deadlock nhờ chiến thuật sắp xếp thứ tự khóa (Lock Ordering). Cả hai giao dịch cùng tranh chấp khóa trên tài khoản có ID nhỏ hơn trước, do đó một bên bị block xếp hàng ngay từ đầu mà không giữ khóa chéo.",
+    "learning": "Luôn sắp xếp thứ tự khóa (Lock Ordering) khi cập nhật nhiều bản ghi trong cùng một giao dịch. Khi tất cả các giao dịch chiếm khóa theo cùng một thứ tự định sẵn (ví dụ: theo thứ tự tăng dần của AccountId), bế tắc sẽ được ngăn chặn hoàn toàn ở mức thiết kế.",
+    "procedures": {
+      "reset": "dbo.sp_Demo_Deadlock_Reset",
+      "bad": "dbo.sp_Demo_Deadlock_Bad",
+      "fix": "dbo.sp_Demo_Deadlock_Fix",
+      "logs": "dbo.sp_Demo_GetLogs"
+    }
   }
 }

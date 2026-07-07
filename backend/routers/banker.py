@@ -149,14 +149,31 @@ def perform_transaction(form: TransactionForm, user=Depends(require_role("Banker
     conn = get_conn()
     cur = conn.cursor()
     try:
-        if form.transaction_type == "deposit":
-            cur.execute("EXEC sp_Deposit ?, ?, ?, ?",
-                        form.account_id, form.amount, user["user_id"], form.description)
-        elif form.transaction_type == "withdraw":
-            cur.execute("EXEC sp_Withdraw ?, ?, ?, ?",
-                        form.account_id, form.amount, user["user_id"], form.description)
+        # Check if this is a deadlock demo transaction
+        is_demo = False
+        if form.description and form.description.startswith("DEADLOCK_DEMO|"):
+            parts = form.description.split("|")
+            if len(parts) >= 6:
+                type_name = parts[1]      # "BAD" or "FIX"
+                delay_str = parts[2]      # e.g., "00:00:08" or "00:00:02"
+                first_acc_id = parts[4]
+                second_acc_id = parts[5]
+                is_demo = True
+
+        if is_demo:
+            proc = "sp_Demo_Deadlock_Bad" if type_name == "BAD" else "sp_Demo_Deadlock_Fix"
+            print(f"[API /banker/transactions] Calling {proc} (@FirstAccountId={first_acc_id}, @SecondAccountId={second_acc_id}, @Delay={delay_str})")
+            cur.execute(f"EXEC dbo.{proc} @FirstAccountId = ?, @SecondAccountId = ?, @Delay = ?",
+                        first_acc_id, second_acc_id, delay_str)
         else:
-            raise HTTPException(status_code=400, detail="Loại giao dịch không hợp lệ")
+            if form.transaction_type == "deposit":
+                cur.execute("EXEC sp_Deposit ?, ?, ?, ?",
+                            form.account_id, form.amount, user["user_id"], form.description)
+            elif form.transaction_type == "withdraw":
+                cur.execute("EXEC sp_Withdraw ?, ?, ?, ?",
+                            form.account_id, form.amount, user["user_id"], form.description)
+            else:
+                raise HTTPException(status_code=400, detail="Loại giao dịch không hợp lệ")
         conn.commit()
         return {"message": "Giao dịch thành công"}
     except Exception as e:

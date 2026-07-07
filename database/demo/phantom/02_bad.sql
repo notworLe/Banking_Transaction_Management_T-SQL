@@ -55,7 +55,7 @@ BEGIN
             @Scenario = @Scenario,
             @Actor = @Actor,
             @Action = N'BEGIN',
-            @Message = N'BAD: BEGIN TRANSACTION';
+            @Message = N'BAD: BẮT ĐẦU GIAO DỊCH';
 
         BEGIN TRANSACTION;
 
@@ -63,7 +63,7 @@ BEGIN
             @Scenario = @Scenario,
             @Actor = @Actor,
             @Action = N'READ',
-            @Message = N'BAD: Before reading today transfer SUM';
+            @Message = N'BAD: Trước khi đọc SUM giao dịch hôm nay';
 
         -- Đọc tổng tiền chuyển hôm nay dưới mức Read Committed
         SELECT @TodayTotal = ISNULL(SUM(Amount), 0)
@@ -76,7 +76,7 @@ BEGIN
           AND Description LIKE N'PHANTOM_LIMIT_DEMO|%';
 
         SET @Message = CONCAT(
-            N'BAD: TodayTotal read = ',
+            N'BAD: Đọc TodayTotal = ',
             CONVERT(NVARCHAR(50), CAST(@TodayTotal AS MONEY), 1)
         );
 
@@ -86,7 +86,7 @@ BEGIN
             @Action = N'READ',
             @Message = @Message;
 
-        SET @Message = CONCAT(N'BAD: Before WAITFOR ', @Delay);
+        SET @Message = CONCAT(N'BAD: Trước khi chờ (WAITFOR) ', @Delay);
 
         EXEC dbo.sp_Demo_Log
             @Scenario = @Scenario,
@@ -101,7 +101,7 @@ BEGIN
             @Scenario = @Scenario,
             @Actor = @Actor,
             @Action = N'AFTER WAITFOR',
-            @Message = N'BAD: After WAITFOR';
+            @Message = N'BAD: Sau khi chờ (WAITFOR)';
 
         -- Kiểm tra hạn mức dựa trên tổng cũ đã đọc
         IF @TodayTotal + @TransferAmount <= @DailyLimit
@@ -110,7 +110,7 @@ BEGIN
                 @Scenario = @Scenario,
                 @Actor = @Actor,
                 @Action = N'LIMIT CHECK',
-                @Message = N'BAD: Limit check PASSED based on old SUM. Before INSERT';
+                @Message = N'BAD: Kiểm tra hạn mức ĐẠT dựa trên SUM cũ. Trước khi INSERT';
 
             INSERT INTO dbo.Transactions (
                 TransactionId,
@@ -132,11 +132,11 @@ BEGIN
                 @TransferAmount,
                 'success',
                 SYSDATETIME(),
-                N'PHANTOM_LIMIT_DEMO|BAD|Inserted transfer after stale SUM check'
+                N'PHANTOM_LIMIT_DEMO|BAD|Đã chèn giao dịch chuyển tiền sau khi kiểm tra SUM bị trễ'
             );
 
             SET @Message = CONCAT(
-                N'BAD: Inserted transfer amount = ',
+                N'BAD: Đã chèn số tiền chuyển = ',
                 CONVERT(NVARCHAR(50), CAST(@TransferAmount AS MONEY), 1),
                 N', TransactionId = ',
                 CONVERT(NVARCHAR(36), @TransactionId)
@@ -154,7 +154,7 @@ BEGIN
                 @Scenario = @Scenario,
                 @Actor = @Actor,
                 @Action = N'LIMIT CHECK',
-                @Message = N'BAD: Limit check FAILED. No insert.';
+                @Message = N'BAD: Kiểm tra hạn mức THẤT BẠI. Không thực hiện chèn.';
         END;
 
         -- Đọc lại tổng tiền chuyển để ghi log kiểm tra
@@ -168,7 +168,7 @@ BEGIN
           AND Description LIKE N'PHANTOM_LIMIT_DEMO|%';
 
         SET @Message = CONCAT(
-            N'BAD: FinalTotal visible inside transaction = ',
+            N'BAD: Đọc FinalTotal nhìn thấy trong transaction = ',
             CONVERT(NVARCHAR(50), CAST(@FinalTotal AS MONEY), 1)
         );
 
@@ -184,13 +184,13 @@ BEGIN
             @Scenario = @Scenario,
             @Actor = @Actor,
             @Action = N'COMMIT',
-            @Message = N'BAD: COMMIT';
+            @Message = N'BAD: COMMIT thành công';
     END TRY
     BEGIN CATCH
         IF @@TRANCOUNT > 0
             ROLLBACK TRANSACTION;
 
-        SET @Message = CONCAT(N'BAD ERROR: ', ERROR_MESSAGE());
+        SET @Message = CONCAT(N'LỖI BAD: ', ERROR_MESSAGE());
 
         EXEC dbo.sp_Demo_Log
             @Scenario = @Scenario,

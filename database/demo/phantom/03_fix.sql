@@ -58,7 +58,7 @@ BEGIN
             @Scenario = @Scenario,
             @Actor = @Actor,
             @Action = N'BEGIN',
-            @Message = N'FIX: BEGIN TRANSACTION with SERIALIZABLE';
+            @Message = N'FIX: BẮT ĐẦU GIAO DỊCH với mức cô lập SERIALIZABLE';
 
         BEGIN TRANSACTION;
 
@@ -66,7 +66,7 @@ BEGIN
             @Scenario = @Scenario,
             @Actor = @Actor,
             @Action = N'READ',
-            @Message = N'FIX: Before reading today SUM with UPDLOCK, HOLDLOCK';
+            @Message = N'FIX: Trước khi đọc SUM hôm nay với UPDLOCK, HOLDLOCK';
 
         -- Sử dụng UPDLOCK, HOLDLOCK trên chỉ mục thích hợp để đặt Range Lock
         SELECT @TodayTotal = ISNULL(SUM(Amount), 0)
@@ -79,7 +79,7 @@ BEGIN
           AND Description LIKE N'PHANTOM_LIMIT_DEMO|%';
 
         SET @Message = CONCAT(
-            N'FIX: TodayTotal read = ',
+            N'FIX: Đọc TodayTotal = ',
             CONVERT(NVARCHAR(50), CAST(@TodayTotal AS MONEY), 1)
         );
 
@@ -89,7 +89,7 @@ BEGIN
             @Action = N'READ',
             @Message = @Message;
 
-        SET @Message = CONCAT(N'FIX: Before WAITFOR ', @Delay);
+        SET @Message = CONCAT(N'FIX: Trước khi chờ (WAITFOR) ', @Delay);
 
         EXEC dbo.sp_Demo_Log
             @Scenario = @Scenario,
@@ -104,7 +104,7 @@ BEGIN
             @Scenario = @Scenario,
             @Actor = @Actor,
             @Action = N'AFTER WAITFOR',
-            @Message = N'FIX: After WAITFOR';
+            @Message = N'FIX: Sau khi chờ (WAITFOR)';
 
         -- Kiểm tra hạn mức
         IF @TodayTotal + @TransferAmount <= @DailyLimit
@@ -113,7 +113,7 @@ BEGIN
                 @Scenario = @Scenario,
                 @Actor = @Actor,
                 @Action = N'LIMIT CHECK',
-                @Message = N'FIX: Limit check PASSED. Before INSERT';
+                @Message = N'FIX: Kiểm tra hạn mức ĐẠT. Trước khi chèn (INSERT)';
 
             INSERT INTO dbo.Transactions (
                 TransactionId,
@@ -135,11 +135,11 @@ BEGIN
                 @TransferAmount,
                 'success',
                 SYSDATETIME(),
-                N'PHANTOM_LIMIT_DEMO|FIX|Inserted transfer after protected SUM check'
+                N'PHANTOM_LIMIT_DEMO|FIX|Đã chèn giao dịch chuyển tiền sau khi kiểm tra SUM được bảo vệ'
             );
 
             SET @Message = CONCAT(
-                N'FIX: Inserted transfer amount = ',
+                N'FIX: Đã chèn số tiền chuyển = ',
                 CONVERT(NVARCHAR(50), CAST(@TransferAmount AS MONEY), 1),
                 N', TransactionId = ',
                 CONVERT(NVARCHAR(36), @TransactionId)
@@ -157,7 +157,7 @@ BEGIN
                 @Scenario = @Scenario,
                 @Actor = @Actor,
                 @Action = N'LIMIT CHECK',
-                @Message = N'FIX: Limit check FAILED. No insert.';
+                @Message = N'FIX: Kiểm tra hạn mức THẤT BẠI. Không thực hiện chèn.';
         END;
 
         -- Đọc lại tổng để ghi log kiểm tra
@@ -171,7 +171,7 @@ BEGIN
           AND Description LIKE N'PHANTOM_LIMIT_DEMO|%';
 
         SET @Message = CONCAT(
-            N'FIX: FinalTotal visible inside transaction = ',
+            N'FIX: Đọc FinalTotal nhìn thấy trong transaction = ',
             CONVERT(NVARCHAR(50), CAST(@FinalTotal AS MONEY), 1)
         );
 
@@ -187,13 +187,13 @@ BEGIN
             @Scenario = @Scenario,
             @Actor = @Actor,
             @Action = N'COMMIT',
-            @Message = N'FIX: COMMIT';
+            @Message = N'FIX: COMMIT thành công';
     END TRY
     BEGIN CATCH
         IF @@TRANCOUNT > 0
             ROLLBACK TRANSACTION;
 
-        SET @Message = CONCAT(N'FIX ERROR: ', ERROR_MESSAGE());
+        SET @Message = CONCAT(N'LỖI FIX: ', ERROR_MESSAGE());
 
         EXEC dbo.sp_Demo_Log
             @Scenario = @Scenario,

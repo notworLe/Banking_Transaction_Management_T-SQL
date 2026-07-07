@@ -44,7 +44,8 @@ CREATE OR ALTER PROCEDURE dbo.sp_Demo_Log
     @Scenario NVARCHAR(50),
     @Actor NVARCHAR(20),
     @Action NVARCHAR(30),
-    @Message NVARCHAR(500)
+    @Message NVARCHAR(500),
+    @ActionTime DATETIME2(3) = NULL
 )
 AS
 BEGIN
@@ -56,6 +57,7 @@ BEGIN
         SessionId,
         Actor,
         Action,
+        ActionTime,
         Message
     )
     VALUES
@@ -64,6 +66,7 @@ BEGIN
         @@SPID,
         @Actor,
         @Action,
+        ISNULL(@ActionTime, SYSDATETIME()),
         @Message
     );
 END

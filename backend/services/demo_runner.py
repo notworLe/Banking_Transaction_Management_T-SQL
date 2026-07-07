@@ -27,6 +27,19 @@ class DemoRunner:
         
         if type not in ("bad", "fix"):
             raise ValueError(f"Invalid run type '{type}'. Must be 'bad' or 'fix'.")
+
+        # Tự động dọn sạch log của scenario này trước khi chạy lượt mới
+        conn = get_conn()
+        cursor = conn.cursor()
+        try:
+            scenario_name = key.upper()
+            cursor.execute("DELETE FROM dbo.Demo_Logs WHERE Scenario = ?", scenario_name)
+            conn.commit()
+        except Exception as e:
+            print(f"[DemoRunner] Warning: failed to clear logs: {e}")
+        finally:
+            cursor.close()
+            conn.close()
         
         if key == "phantom":
             import urllib.request
@@ -87,6 +100,43 @@ class DemoRunner:
 
             return
 
+        if key == "deadlock":
+            conn = get_conn()
+            cursor = conn.cursor()
+            try:
+                cursor.execute("SELECT BankAccountId FROM dbo.BankAccounts WHERE AccountNumber = '9704001000001'")
+                acc1 = cursor.fetchone()[0]
+                cursor.execute("SELECT BankAccountId FROM dbo.BankAccounts WHERE AccountNumber = '9704002000001'")
+                acc2 = cursor.fetchone()[0]
+            finally:
+                cursor.close()
+                conn.close()
+
+            import urllib.request
+            import json
+
+            url = "http://host.docker.internal:9000/run"
+            payload = {
+                "demo": "deadlock",
+                "mode": type,
+                "acc1": str(acc1),
+                "acc2": str(acc2)
+            }
+            headers = {"Content-Type": "application/json"}
+            data = json.dumps(payload).encode("utf-8")
+
+            print(f"[DemoRunner] Delegating deadlock Playwright to Demo Agent at {url}...")
+            req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+
+            try:
+                with urllib.request.urlopen(req, timeout=60) as response:
+                    res_body = response.read().decode("utf-8")
+                    print(f"[DemoRunner] Demo Agent responded: {res_body}")
+            except Exception as e:
+                print(f"[DemoRunner] Failed to communicate with Demo Agent: {e}")
+                raise RuntimeError(f"Communication with Demo Agent failed: {e}")
+
+            return
 
         proc = anomaly["procedures"][type]
         
