@@ -53,6 +53,14 @@ def run_anomaly(key: str, body: RunBody):
     try:
         runner.run(key, body.type)
         return {"status": "success", "message": f"Run '{body.type}' for '{key}' completed successfully."}
+    except RuntimeError as e:
+        # Demo Agent chưa chạy hoặc không thể kết nối
+        if "Communication with Demo Agent failed" in str(e):
+            raise HTTPException(
+                status_code=503,
+                detail="DEMO_AGENT_UNAVAILABLE"
+            )
+        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
