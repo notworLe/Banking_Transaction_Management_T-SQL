@@ -7,6 +7,10 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 3000,
     allowedHosts: true,
+    watch: {
+      usePolling: true,   // bắt buộc để HMR hoạt động trong Docker trên Windows
+      interval: 1000,
+    },
     proxy: {
       '/api': {
         target: 'http://app:8000',
