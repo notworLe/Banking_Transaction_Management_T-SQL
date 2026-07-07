@@ -23,6 +23,13 @@ BEGIN
     DECLARE @WaitMessage NVARCHAR(500);
     DECLARE @LockDestinationMessage NVARCHAR(500);
 
+    -- Table variable to preserve logs across transaction rollback
+    DECLARE @TempLogs TABLE (
+        Action NVARCHAR(30),
+        Message NVARCHAR(500),
+        ActionTime DATETIME2 DEFAULT SYSDATETIME()
+    );
+
     IF @SourceAccount IS NULL OR LTRIM(RTRIM(@SourceAccount)) = ''
        OR @DestinationAccount IS NULL OR LTRIM(RTRIM(@DestinationAccount)) = ''
     BEGIN
@@ -58,11 +65,7 @@ BEGIN
 
     BEGIN TRY
         SET @BeginMessage = N'BAD: Bắt đầu chuyển khoản từ ' + @SourceAccount + N' đến ' + @DestinationAccount;
-        EXEC dbo.sp_Demo_Log
-            @Scenario = @Scenario,
-            @Actor = @Actor,
-            @Action = N'BEGIN',
-            @Message = @BeginMessage;
+        INSERT INTO @TempLogs (Action, Message) VALUES (N'BEGIN', @BeginMessage);
 
         BEGIN TRANSACTION;
 
@@ -71,18 +74,10 @@ BEGIN
         WHERE BankAccountId = @SourceAccountId;
 
         SET @LockSourceMessage = N'BAD: Đã khóa tài khoản nguồn ' + @SourceAccount + N' và trừ ' + CAST(@Amount AS NVARCHAR(30));
-        EXEC dbo.sp_Demo_Log
-            @Scenario = @Scenario,
-            @Actor = @Actor,
-            @Action = N'LOCK_SOURCE',
-            @Message = @LockSourceMessage;
+        INSERT INTO @TempLogs (Action, Message) VALUES (N'LOCK_SOURCE', @LockSourceMessage);
 
         SET @WaitMessage = N'BAD: Đang chờ trước khi khóa tài khoản đích ' + @DestinationAccount;
-        EXEC dbo.sp_Demo_Log
-            @Scenario = @Scenario,
-            @Actor = @Actor,
-            @Action = N'WAIT',
-            @Message = @WaitMessage;
+        INSERT INTO @TempLogs (Action, Message) VALUES (N'WAIT', @WaitMessage);
 
         WAITFOR DELAY @Delay;
 
@@ -91,6 +86,11 @@ BEGIN
         WHERE BankAccountId = @DestinationAccountId;
 
         COMMIT TRANSACTION;
+
+        -- Write preserved logs to Demo_Logs
+        INSERT INTO dbo.Demo_Logs (Scenario, SessionId, Actor, Action, ActionTime, Message)
+        SELECT @Scenario, @@SPID, @Actor, Action, ActionTime, Message
+        FROM @TempLogs;
 
         -- Give the opposing transaction time to record its deadlock victim status before this transaction records success.
         WAITFOR DELAY '00:00:03';
@@ -111,6 +111,11 @@ BEGIN
     BEGIN CATCH
         IF @@TRANCOUNT > 0
             ROLLBACK TRANSACTION;
+
+        -- Write preserved logs to Demo_Logs (survived the rollback!)
+        INSERT INTO dbo.Demo_Logs (Scenario, SessionId, Actor, Action, ActionTime, Message)
+        SELECT @Scenario, @@SPID, @Actor, Action, ActionTime, Message
+        FROM @TempLogs;
 
         DECLARE @ErrNum INT = ERROR_NUMBER();
         DECLARE @ErrMsg NVARCHAR(500) = ERROR_MESSAGE();

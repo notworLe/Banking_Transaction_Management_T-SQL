@@ -27,6 +27,13 @@ BEGIN
     DECLARE @WaitMessage NVARCHAR(500);
     DECLARE @SecondLockMessage NVARCHAR(500);
 
+    -- Table variable to preserve logs across transaction rollback
+    DECLARE @TempLogs TABLE (
+        Action NVARCHAR(30),
+        Message NVARCHAR(500),
+        ActionTime DATETIME2 DEFAULT SYSDATETIME()
+    );
+
     IF @SourceAccount IS NULL OR LTRIM(RTRIM(@SourceAccount)) = ''
        OR @DestinationAccount IS NULL OR LTRIM(RTRIM(@DestinationAccount)) = ''
     BEGIN
@@ -77,11 +84,7 @@ BEGIN
 
     BEGIN TRY
         SET @BeginMessage = N'FIX: Bắt đầu chuyển khoản theo thứ tự khóa từ ' + @SourceAccount + N' đến ' + @DestinationAccount;
-        EXEC dbo.sp_Demo_Log
-            @Scenario = @Scenario,
-            @Actor = @Actor,
-            @Action = N'BEGIN',
-            @Message = @BeginMessage;
+        INSERT INTO @TempLogs (Action, Message) VALUES (N'BEGIN', @BeginMessage);
 
         BEGIN TRANSACTION;
 
@@ -92,11 +95,7 @@ BEGIN
             WHERE BankAccountId = @SourceAccountId;
 
             SET @FirstLockMessage = N'FIX: Đã khóa tài khoản đầu tiên ' + @FirstAccount + N' và trừ ' + CAST(@Amount AS NVARCHAR(30));
-            EXEC dbo.sp_Demo_Log
-                @Scenario = @Scenario,
-                @Actor = @Actor,
-                @Action = @FirstAction,
-                @Message = @FirstLockMessage;
+            INSERT INTO @TempLogs (Action, Message) VALUES (@FirstAction, @FirstLockMessage);
         END
         ELSE
         BEGIN
@@ -105,19 +104,11 @@ BEGIN
             WHERE BankAccountId = @DestinationAccountId;
 
             SET @FirstLockMessage = N'FIX: Đã khóa tài khoản đầu tiên ' + @FirstAccount + N' và cộng ' + CAST(@Amount AS NVARCHAR(30));
-            EXEC dbo.sp_Demo_Log
-                @Scenario = @Scenario,
-                @Actor = @Actor,
-                @Action = @FirstAction,
-                @Message = @FirstLockMessage;
+            INSERT INTO @TempLogs (Action, Message) VALUES (@FirstAction, @FirstLockMessage);
         END;
 
         SET @WaitMessage = N'FIX: Đang chờ trước khi khóa tài khoản thứ hai ' + @SecondAccount;
-        EXEC dbo.sp_Demo_Log
-            @Scenario = @Scenario,
-            @Actor = @Actor,
-            @Action = N'WAIT',
-            @Message = @WaitMessage;
+        INSERT INTO @TempLogs (Action, Message) VALUES (N'WAIT', @WaitMessage);
 
         WAITFOR DELAY @Delay;
 
@@ -128,11 +119,7 @@ BEGIN
             WHERE BankAccountId = @DestinationAccountId;
 
             SET @SecondLockMessage = N'FIX: Đã khóa tài khoản thứ hai ' + @SecondAccount + N' và cộng ' + CAST(@Amount AS NVARCHAR(30));
-            EXEC dbo.sp_Demo_Log
-                @Scenario = @Scenario,
-                @Actor = @Actor,
-                @Action = @SecondAction,
-                @Message = @SecondLockMessage;
+            INSERT INTO @TempLogs (Action, Message) VALUES (@SecondAction, @SecondLockMessage);
         END
         ELSE
         BEGIN
@@ -141,14 +128,15 @@ BEGIN
             WHERE BankAccountId = @SourceAccountId;
 
             SET @SecondLockMessage = N'FIX: Đã khóa tài khoản thứ hai ' + @SecondAccount + N' và trừ ' + CAST(@Amount AS NVARCHAR(30));
-            EXEC dbo.sp_Demo_Log
-                @Scenario = @Scenario,
-                @Actor = @Actor,
-                @Action = @SecondAction,
-                @Message = @SecondLockMessage;
+            INSERT INTO @TempLogs (Action, Message) VALUES (@SecondAction, @SecondLockMessage);
         END;
 
         COMMIT TRANSACTION;
+
+        -- Write preserved logs to Demo_Logs
+        INSERT INTO dbo.Demo_Logs (Scenario, SessionId, Actor, Action, ActionTime, Message)
+        SELECT @Scenario, @@SPID, @Actor, Action, ActionTime, Message
+        FROM @TempLogs;
 
         EXEC dbo.sp_Demo_Log
             @Scenario = @Scenario,
@@ -159,6 +147,11 @@ BEGIN
     BEGIN CATCH
         IF @@TRANCOUNT > 0
             ROLLBACK TRANSACTION;
+
+        -- Write preserved logs to Demo_Logs (survived rollback)
+        INSERT INTO dbo.Demo_Logs (Scenario, SessionId, Actor, Action, ActionTime, Message)
+        SELECT @Scenario, @@SPID, @Actor, Action, ActionTime, Message
+        FROM @TempLogs;
 
         DECLARE @ErrNum INT = ERROR_NUMBER();
         DECLARE @ErrMsg NVARCHAR(500) = ERROR_MESSAGE();
