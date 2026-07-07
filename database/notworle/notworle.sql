@@ -1,1 +1,0 @@
-USE banking_transaction;
