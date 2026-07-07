@@ -149,14 +149,14 @@ DECLARE @UCust1   UNIQUEIDENTIFIER = NEWID();
 DECLARE @UCust2   UNIQUEIDENTIFIER = NEWID();
 DECLARE @UCust3   UNIQUEIDENTIFIER = NEWID();
 
--- Passwords: tất cả tài khoản đều dùng password = 123123
+-- Passwords: admin=Admin@123 | banker_nam/banker_lan=Banker@123 | nguyen_van_a=Cust@111 | tran_thi_b=Cust@222 | le_van_c=Cust@333
 INSERT INTO Users (UserId, RoleId, Username, PasswordHash, Status, LastLoginAt) VALUES
-    (@UAdmin,   @RoleAdmin,    'admin',        '$2b$12$AqEjkux9QyXZHPkZnX06MeQ5OPRS9pxfrOo7id2jtSy2iMTnUDbTi', 'active', '2025-06-05 08:00:00'),
-    (@UBanker1, @RoleBanker,   'banker_nam',   '$2b$12$AqEjkux9QyXZHPkZnX06MeQ5OPRS9pxfrOo7id2jtSy2iMTnUDbTi', 'active', '2025-06-05 08:15:00'),
-    (@UBanker2, @RoleBanker,   'banker_lan',   '$2b$12$AqEjkux9QyXZHPkZnX06MeQ5OPRS9pxfrOo7id2jtSy2iMTnUDbTi', 'locked', '2025-05-20 09:00:00'),
-    (@UCust1,   @RoleCustomer, 'nguyen_van_a', '$2b$12$AqEjkux9QyXZHPkZnX06MeQ5OPRS9pxfrOo7id2jtSy2iMTnUDbTi', 'active', '2025-06-05 10:00:00'),
-    (@UCust2,   @RoleCustomer, 'tran_thi_b',   '$2b$12$AqEjkux9QyXZHPkZnX06MeQ5OPRS9pxfrOo7id2jtSy2iMTnUDbTi', 'active', '2025-06-04 14:30:00'),
-    (@UCust3,   @RoleCustomer, 'le_van_c',     '$2b$12$AqEjkux9QyXZHPkZnX06MeQ5OPRS9pxfrOo7id2jtSy2iMTnUDbTi', 'locked', '2025-05-01 11:00:00');
+    (@UAdmin,   @RoleAdmin,    'admin',        '$2b$12$NNhFElWSGbdai9kR/Epqjev.HgErRR0j3P85tImiFMcuRCQ8T0Wm.',  'active', '2025-06-05 08:00:00'),
+    (@UBanker1, @RoleBanker,   'banker_nam',   '$2b$12$YHwefJpLYFbjcs0tHCZMM.pOsFV7c.lbjRJtaa3ayQgw025IihnFK', 'active', '2025-06-05 08:15:00'),
+    (@UBanker2, @RoleBanker,   'banker_lan',   '$2b$12$YHwefJpLYFbjcs0tHCZMM.pOsFV7c.lbjRJtaa3ayQgw025IihnFK', 'locked', '2025-05-20 09:00:00'),
+    (@UCust1,   @RoleCustomer, 'nguyen_van_a', '$2b$12$4DTBQ0USePdF3fEC8LnAWezcqgjCj6EvqNLgeDGGjFTpgMOrE51dK', 'active', '2025-06-05 10:00:00'),
+    (@UCust2,   @RoleCustomer, 'tran_thi_b',   '$2b$12$BnoANF.eawK1tmqIUw732OfajuAIMuiNjFNuXG2ooP7vS6sjQ52lG', 'active', '2025-06-04 14:30:00'),
+    (@UCust3,   @RoleCustomer, 'le_van_c',     '$2b$12$JehHmEu04blFKnZnE8jA3.8lq6aifKXRlJcUE1ISkokW0TDx0igHe', 'locked', '2025-05-01 11:00:00');
 
 -- ── Bankers ───────────────────────────────────────────────────
 DECLARE @Banker1 UNIQUEIDENTIFIER = NEWID();
@@ -227,6 +227,287 @@ GO
 -- ============================================================
 -- STORED PROCEDURES
 -- ============================================================
+
+-- ──────────────────────────────────────────────────────────────
+-- sp_RegisterCustomer
+-- Đăng ký khách hàng mới + tạo tài khoản thanh toán mặc định
+-- Tất cả trong 1 atomic transaction: nếu bất kỳ bước nào lỗi
+-- thì toàn bộ bị ROLLBACK (không có user "mồ côi" hay customer
+-- không có tài khoản).
+-- ──────────────────────────────────────────────────────────────
+CREATE OR ALTER PROCEDURE dbo.sp_RegisterCustomer
+    @Username     NVARCHAR(100),
+    @PasswordHash NVARCHAR(256),   -- bcrypt hash từ Python
+    @FullName     NVARCHAR(150),
+    @Email        NVARCHAR(200),
+    @PhoneNumber  NVARCHAR(20),
+    @Address      NVARCHAR(500)  = NULL,
+    @BirthDay     DATE           = NULL,
+    -- OUTPUT params để trả kết quả về Python
+    @UserId       UNIQUEIDENTIFIER OUTPUT,
+    @CustomerId   UNIQUEIDENTIFIER OUTPUT,
+    @AccountNumber NVARCHAR(20)  OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;   -- tự ROLLBACK nếu có lỗi runtime
+
+    BEGIN TRANSACTION;
+    BEGIN TRY
+
+        -- ── 1. Kiểm tra username / email chưa tồn tại ────────
+        IF EXISTS (SELECT 1 FROM dbo.Users WHERE Username = @Username)
+            THROW 50010, N'Username đã tồn tại', 1;
+
+        IF EXISTS (SELECT 1 FROM dbo.Customers WHERE Email = @Email)
+            THROW 50011, N'Email đã được sử dụng', 1;
+
+        IF EXISTS (SELECT 1 FROM dbo.Customers WHERE PhoneNumber = @PhoneNumber)
+            THROW 50012, N'Số điện thoại đã được sử dụng', 1;
+
+        -- ── 2. Lấy RoleId của Customer ────────────────────────
+        DECLARE @RoleId UNIQUEIDENTIFIER;
+        SELECT @RoleId = RoleId FROM dbo.Roles WHERE RoleName = 'Customer';
+        IF @RoleId IS NULL
+            THROW 50013, N'Role Customer không tồn tại trong hệ thống', 1;
+
+        -- ── 3. Tạo User ───────────────────────────────────────
+        SET @UserId = NEWID();
+        INSERT INTO dbo.Users (UserId, RoleId, Username, PasswordHash)
+        VALUES (@UserId, @RoleId, @Username, @PasswordHash);
+
+        -- ── 4. Tạo Customer profile ───────────────────────────
+        SET @CustomerId = NEWID();
+        INSERT INTO dbo.Customers (CustomerId, UserId, FullName, Email, PhoneNumber, Address, BirthDay)
+        VALUES (@CustomerId, @UserId, @FullName, @Email, @PhoneNumber, @Address, @BirthDay);
+
+        -- ── 5. Sinh số tài khoản tự động (9704 + 9 chữ số) ───
+        -- Dùng timestamp microseconds để đảm bảo unique
+        DECLARE @Suffix NVARCHAR(9);
+        SET @Suffix = RIGHT('000000000' + CAST(
+            ABS(CHECKSUM(NEWID())) % 1000000000
+        AS NVARCHAR(9)), 9);
+        SET @AccountNumber = '9704' + @Suffix;
+
+        -- Đảm bảo số TK chưa tồn tại (collision rất hiếm nhưng phòng ngừa)
+        WHILE EXISTS (SELECT 1 FROM dbo.BankAccounts WHERE AccountNumber = @AccountNumber)
+        BEGIN
+            SET @Suffix = RIGHT('000000000' + CAST(
+                ABS(CHECKSUM(NEWID())) % 1000000000
+            AS NVARCHAR(9)), 9);
+            SET @AccountNumber = '9704' + @Suffix;
+        END
+
+        -- ── 6. Tạo BankAccount thanh toán mặc định ───────────
+        INSERT INTO dbo.BankAccounts (CustomerId, AccountNumber, AccountType, Balance)
+        VALUES (@CustomerId, @AccountNumber, 'payment', 0.00);
+
+        COMMIT TRANSACTION;
+
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0
+            ROLLBACK TRANSACTION;
+        -- Re-throw lỗi lên tầng Python để xử lý
+        THROW;
+    END CATCH
+END;
+GO
+
+-- ──────────────────────────────────────────────────────────────
+-- DEMO: ATOMICITY - Tạo tài khoản Customer
+-- Kịch bản minh họa tầm quan trọng của BEGIN TRANSACTION
+-- ──────────────────────────────────────────────────────────────
+
+-- 1. RESET: Dọn dữ liệu demo
+CREATE OR ALTER PROCEDURE dbo.sp_Demo_Register_Reset
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- Xóa theo đúng thứ tự FK dependencies:
+    -- Transactions → BankAccounts → Customers → Users
+
+    -- 1. Xóa Transactions tham chiếu BankAccounts/Users của demo
+    DELETE FROM dbo.Transactions
+    WHERE FromBankAccountId IN (
+        SELECT ba.BankAccountId FROM dbo.BankAccounts ba
+        JOIN dbo.Customers c ON ba.CustomerId = c.CustomerId
+        JOIN dbo.Users u ON c.UserId = u.UserId
+        WHERE u.Username LIKE 'demo_%'
+    )
+    OR ToBankAccountId IN (
+        SELECT ba.BankAccountId FROM dbo.BankAccounts ba
+        JOIN dbo.Customers c ON ba.CustomerId = c.CustomerId
+        JOIN dbo.Users u ON c.UserId = u.UserId
+        WHERE u.Username LIKE 'demo_%'
+    )
+    OR CreatedByUserId IN (
+        SELECT UserId FROM dbo.Users WHERE Username LIKE 'demo_%'
+    );
+
+    -- 2. Xóa AuditLogs
+    DELETE FROM dbo.AuditLogs
+    WHERE UserId IN (SELECT UserId FROM dbo.Users WHERE Username LIKE 'demo_%');
+
+    -- 3. Xóa LoginLogs
+    DELETE FROM dbo.LoginLogs
+    WHERE UserId IN (SELECT UserId FROM dbo.Users WHERE Username LIKE 'demo_%');
+
+    -- 4. Xóa BankAccounts
+    DELETE FROM dbo.BankAccounts
+    WHERE CustomerId IN (
+        SELECT c.CustomerId FROM dbo.Customers c
+        JOIN dbo.Users u ON c.UserId = u.UserId
+        WHERE u.Username LIKE 'demo_%'
+    );
+
+    -- 5. Xóa Customers
+    DELETE FROM dbo.Customers
+    WHERE UserId IN (SELECT UserId FROM dbo.Users WHERE Username LIKE 'demo_%');
+
+    -- 6. Xóa Users
+    DELETE FROM dbo.Users WHERE Username LIKE 'demo_%';
+
+    -- 7. Clear demo logs
+    EXEC dbo.sp_Demo_ClearLogs @Scenario = N'REGISTER';
+
+    EXEC dbo.sp_Demo_Log
+        @Scenario = N'REGISTER',
+        @Actor    = N'System',
+        @Action   = N'RESET',
+        @Message  = N'Reset hoàn tất. Đã xóa tất cả demo users, transactions, accounts.';
+END;
+
+GO
+
+-- 2. BAD: Tạo tài khoản KHÔNG dùng TRANSACTION
+--    → Nếu bước tạo BankAccount lỗi, User và Customer vẫn bị ghi vào DB (orphan)
+CREATE OR ALTER PROCEDURE dbo.sp_Demo_Register_Bad
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @Scenario   NVARCHAR(50) = N'REGISTER';
+    DECLARE @Actor      NVARCHAR(20) = N'BAD';
+    DECLARE @UserId     UNIQUEIDENTIFIER = NEWID();
+    DECLARE @CustomerId UNIQUEIDENTIFIER = NEWID();
+    DECLARE @RoleId     UNIQUEIDENTIFIER;
+
+    -- Lấy role Customer
+    SELECT @RoleId = RoleId FROM dbo.Roles WHERE RoleName = 'Customer';
+
+    EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'START',
+        @Message=N'[BAD] Bắt đầu đăng ký - KHÔNG có BEGIN TRANSACTION';
+
+    -- Bước 1: Tạo User (KHÔNG có transaction bao ngoài)
+    BEGIN TRY
+        INSERT INTO dbo.Users (UserId, RoleId, Username, PasswordHash)
+        VALUES (@UserId, @RoleId, 'demo_user_bad', '$2b$12$placeholder_hash_bad');
+
+        EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'INSERT',
+            @Message=N'[BAD] ✅ Bước 1: INSERT Users thành công → UserId = ' +
+                     CAST(@UserId AS NVARCHAR(36));
+    END TRY
+    BEGIN CATCH
+        DECLARE @ErrMsg1 NVARCHAR(1000) = N'[BAD] ❌ Bước 1 thất bại: ' + ERROR_MESSAGE();
+        EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'ERROR',
+            @Message=@ErrMsg1;
+        RETURN;
+    END CATCH;
+
+    -- Bước 2: Tạo Customer (KHÔNG có transaction)
+    BEGIN TRY
+        INSERT INTO dbo.Customers (CustomerId, UserId, FullName, Email, PhoneNumber)
+        VALUES (@CustomerId, @UserId, N'Demo User (BAD)', 'demo_bad@test.com', '0900000001');
+
+        DECLARE @Msg2 NVARCHAR(1000) = N'[BAD] ✅ Bước 2: INSERT Customers thành công → CustomerId = ' + CAST(@CustomerId AS NVARCHAR(36));
+        EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'INSERT',
+            @Message=@Msg2;
+    END TRY
+    BEGIN CATCH
+        DECLARE @ErrMsg2 NVARCHAR(1000) = N'[BAD] ❌ Bước 2 thất bại: ' + ERROR_MESSAGE();
+        EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'ERROR',
+            @Message=@ErrMsg2;
+        RETURN;
+    END CATCH;
+
+    -- Bước 3: Tạo BankAccount - CỐ TÌNH GÂY LỖI (AccountType không hợp lệ)
+    EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'INSERT',
+        @Message=N'[BAD] ⚡ Bước 3: Đang INSERT BankAccounts với AccountType không hợp lệ...';
+
+    BEGIN TRY
+        INSERT INTO dbo.BankAccounts (CustomerId, AccountNumber, AccountType, Balance)
+        VALUES (@CustomerId, '9704_DEMO_BAD', 'INVALID_TYPE', 0.00);
+        -- ↑ CHECK CONSTRAINT sẽ REJECT vì AccountType phải là payment/saving/debit
+    END TRY
+    BEGIN CATCH
+        DECLARE @ErrMsg3 NVARCHAR(1000) = N'[BAD] ❌ Bước 3 THẤT BẠI: ' + ERROR_MESSAGE();
+        EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'ERROR',
+            @Message=@ErrMsg3;
+
+        DECLARE @Msg3 NVARCHAR(1000) = N'[BAD] ⚠️ KẾT QUẢ: User + Customer ĐÃ ĐƯỢC GHI vào DB nhưng KHÔNG có BankAccount! → Customer "mồ côi" không thể đăng nhập có tài khoản.';
+        EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'RESULT',
+            @Message=@Msg3;
+    END CATCH;
+END;
+GO
+
+-- 3. FIX: Tạo tài khoản CÓ dùng TRANSACTION (gọi sp_RegisterCustomer)
+--    → Nếu bất kỳ bước nào lỗi, ROLLBACK toàn bộ — DB sạch sẽ
+CREATE OR ALTER PROCEDURE dbo.sp_Demo_Register_Fix
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @Scenario      NVARCHAR(50) = N'REGISTER';
+    DECLARE @Actor         NVARCHAR(20) = N'FIX';
+    DECLARE @UserId        UNIQUEIDENTIFIER;
+    DECLARE @CustomerId    UNIQUEIDENTIFIER;
+    DECLARE @AccountNumber NVARCHAR(20);
+
+    EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'START',
+        @Message=N'[FIX] Bắt đầu đăng ký - CÓ BEGIN TRANSACTION (gọi sp_RegisterCustomer)';
+
+    EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'BEGIN',
+        @Message=N'[FIX] BEGIN TRANSACTION — toàn bộ 3 bước INSERT nằm trong 1 transaction';
+
+    BEGIN TRY
+        -- Gọi sp_RegisterCustomer - bên trong nó có BEGIN TRANSACTION / ROLLBACK
+        EXEC dbo.sp_RegisterCustomer
+            @Username      = 'demo_user_fix',
+            @PasswordHash  = '$2b$12$placeholder_hash_fix',
+            @FullName      = N'Demo User (FIX)',
+            @Email         = 'demo_fix@test.com',
+            @PhoneNumber   = '0900000002',
+            @UserId        = @UserId        OUTPUT,
+            @CustomerId    = @CustomerId    OUTPUT,
+            @AccountNumber = @AccountNumber OUTPUT;
+
+        EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'INSERT',
+            @Message=N'[FIX] ✅ Bước 1: INSERT Users thành công';
+
+        EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'INSERT',
+            @Message=N'[FIX] ✅ Bước 2: INSERT Customers thành công';
+
+        DECLARE @MsgFix NVARCHAR(1000) = N'[FIX] ✅ Bước 3: INSERT BankAccounts thành công → Số TK: ' + @AccountNumber;
+        EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'INSERT',
+            @Message=@MsgFix;
+
+        EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'COMMIT',
+            @Message=N'[FIX] ✅ COMMIT — Tất cả 3 bước thành công, dữ liệu được lưu hoàn chỉnh.';
+
+        EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'RESULT',
+            @Message=N'[FIX] ✅ KẾT QUẢ: User + Customer + BankAccount đều được tạo đầy đủ và nhất quán.';
+
+    END TRY
+    BEGIN CATCH
+        DECLARE @ErrFix NVARCHAR(1000) = N'[FIX] 🔄 ROLLBACK — Lỗi xảy ra: ' + ERROR_MESSAGE() + N' → TOÀN BỘ bị hoàn tác, DB vẫn sạch.';
+        EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'ROLLBACK',
+            @Message=@ErrFix;
+    END CATCH;
+END;
+GO
 
 -- sp_Deposit: Nạp tiền vào tài khoản
 CREATE OR ALTER PROCEDURE sp_Deposit
@@ -404,7 +685,8 @@ CREATE OR ALTER PROCEDURE dbo.sp_Demo_Log
     @Scenario NVARCHAR(50),
     @Actor NVARCHAR(20),
     @Action NVARCHAR(30),
-    @Message NVARCHAR(500)
+    @Message NVARCHAR(500),
+    @ActionTime DATETIME2(3) = NULL
 )
 AS
 BEGIN
@@ -416,6 +698,7 @@ BEGIN
         SessionId,
         Actor,
         Action,
+        ActionTime,
         Message
     )
     VALUES
@@ -424,6 +707,7 @@ BEGIN
         @@SPID,
         @Actor,
         @Action,
+        ISNULL(@ActionTime, SYSDATETIME()),
         @Message
     );
 END
@@ -558,7 +842,7 @@ BEGIN
         80000000.00,
         'success',
         SYSDATETIME(),
-        N'PHANTOM_LIMIT_DEMO|BASELINE|Today total starts at 80,000,000'
+        N'PHANTOM_LIMIT_DEMO|BASELINE|Tổng hôm nay bắt đầu từ 80,000,000'
     );
 
     -- 5. Ghi log hoàn thành reset
@@ -566,7 +850,7 @@ BEGIN
         @Scenario = @Scenario,
         @Actor = @Actor,
         @Action = @Action,
-        @Message = N'Reset complete. Baseline transfer = 80,000,000.';
+        @Message = N'Hoàn tất reset. Giao dịch gốc = 80.000.000.';
 END;
 GO
 
@@ -624,7 +908,7 @@ BEGIN
             @Scenario = @Scenario,
             @Actor = @Actor,
             @Action = N'BEGIN',
-            @Message = N'BAD: BEGIN TRANSACTION';
+            @Message = N'BAD: BẮT ĐẦU GIAO DỊCH';
 
         BEGIN TRANSACTION;
 
@@ -632,7 +916,7 @@ BEGIN
             @Scenario = @Scenario,
             @Actor = @Actor,
             @Action = N'READ',
-            @Message = N'BAD: Before reading today transfer SUM';
+            @Message = N'BAD: Trước khi đọc SUM giao dịch hôm nay';
 
         -- Đọc tổng tiền chuyển hôm nay dưới mức Read Committed
         SELECT @TodayTotal = ISNULL(SUM(Amount), 0)
@@ -645,7 +929,7 @@ BEGIN
           AND Description LIKE N'PHANTOM_LIMIT_DEMO|%';
 
         SET @Message = CONCAT(
-            N'BAD: TodayTotal read = ',
+            N'BAD: Đọc TodayTotal = ',
             CONVERT(NVARCHAR(50), CAST(@TodayTotal AS MONEY), 1)
         );
 
@@ -655,7 +939,7 @@ BEGIN
             @Action = N'READ',
             @Message = @Message;
 
-        SET @Message = CONCAT(N'BAD: Before WAITFOR ', @Delay);
+        SET @Message = CONCAT(N'BAD: Trước khi chờ (WAITFOR) ', @Delay);
 
         EXEC dbo.sp_Demo_Log
             @Scenario = @Scenario,
@@ -670,7 +954,7 @@ BEGIN
             @Scenario = @Scenario,
             @Actor = @Actor,
             @Action = N'AFTER WAITFOR',
-            @Message = N'BAD: After WAITFOR';
+            @Message = N'BAD: Sau khi chờ (WAITFOR)';
 
         -- Kiểm tra hạn mức dựa trên tổng cũ đã đọc
         IF @TodayTotal + @TransferAmount <= @DailyLimit
@@ -679,7 +963,7 @@ BEGIN
                 @Scenario = @Scenario,
                 @Actor = @Actor,
                 @Action = N'LIMIT CHECK',
-                @Message = N'BAD: Limit check PASSED based on old SUM. Before INSERT';
+                @Message = N'BAD: Kiểm tra hạn mức ĐẠT dựa trên SUM cũ. Trước khi INSERT';
 
             INSERT INTO dbo.Transactions (
                 TransactionId,
@@ -701,11 +985,11 @@ BEGIN
                 @TransferAmount,
                 'success',
                 SYSDATETIME(),
-                N'PHANTOM_LIMIT_DEMO|BAD|Inserted transfer after stale SUM check'
+                N'PHANTOM_LIMIT_DEMO|BAD|Đã chèn giao dịch chuyển tiền sau khi kiểm tra SUM bị trễ'
             );
 
             SET @Message = CONCAT(
-                N'BAD: Inserted transfer amount = ',
+                N'BAD: Đã chèn số tiền chuyển = ',
                 CONVERT(NVARCHAR(50), CAST(@TransferAmount AS MONEY), 1),
                 N', TransactionId = ',
                 CONVERT(NVARCHAR(36), @TransactionId)
@@ -723,7 +1007,7 @@ BEGIN
                 @Scenario = @Scenario,
                 @Actor = @Actor,
                 @Action = N'LIMIT CHECK',
-                @Message = N'BAD: Limit check FAILED. No insert.';
+                @Message = N'BAD: Kiểm tra hạn mức THẤT BẠI. Không thực hiện chèn.';
         END;
 
         -- Đọc lại tổng tiền chuyển để ghi log kiểm tra
@@ -737,7 +1021,7 @@ BEGIN
           AND Description LIKE N'PHANTOM_LIMIT_DEMO|%';
 
         SET @Message = CONCAT(
-            N'BAD: FinalTotal visible inside transaction = ',
+            N'BAD: Đọc FinalTotal nhìn thấy trong transaction = ',
             CONVERT(NVARCHAR(50), CAST(@FinalTotal AS MONEY), 1)
         );
 
@@ -753,13 +1037,13 @@ BEGIN
             @Scenario = @Scenario,
             @Actor = @Actor,
             @Action = N'COMMIT',
-            @Message = N'BAD: COMMIT';
+            @Message = N'BAD: COMMIT thành công';
     END TRY
     BEGIN CATCH
         IF @@TRANCOUNT > 0
             ROLLBACK TRANSACTION;
 
-        SET @Message = CONCAT(N'BAD ERROR: ', ERROR_MESSAGE());
+        SET @Message = CONCAT(N'LỖI BAD: ', ERROR_MESSAGE());
 
         EXEC dbo.sp_Demo_Log
             @Scenario = @Scenario,
@@ -829,7 +1113,7 @@ BEGIN
             @Scenario = @Scenario,
             @Actor = @Actor,
             @Action = N'BEGIN',
-            @Message = N'FIX: BEGIN TRANSACTION with SERIALIZABLE';
+            @Message = N'FIX: BẮT ĐẦU GIAO DỊCH với mức cô lập SERIALIZABLE';
 
         BEGIN TRANSACTION;
 
@@ -837,7 +1121,7 @@ BEGIN
             @Scenario = @Scenario,
             @Actor = @Actor,
             @Action = N'READ',
-            @Message = N'FIX: Before reading today SUM with UPDLOCK, HOLDLOCK';
+            @Message = N'FIX: Trước khi đọc SUM hôm nay với UPDLOCK, HOLDLOCK';
 
         -- Sử dụng UPDLOCK, HOLDLOCK trên chỉ mục thích hợp để đặt Range Lock
         SELECT @TodayTotal = ISNULL(SUM(Amount), 0)
@@ -850,7 +1134,7 @@ BEGIN
           AND Description LIKE N'PHANTOM_LIMIT_DEMO|%';
 
         SET @Message = CONCAT(
-            N'FIX: TodayTotal read = ',
+            N'FIX: Đọc TodayTotal = ',
             CONVERT(NVARCHAR(50), CAST(@TodayTotal AS MONEY), 1)
         );
 
@@ -860,7 +1144,7 @@ BEGIN
             @Action = N'READ',
             @Message = @Message;
 
-        SET @Message = CONCAT(N'FIX: Before WAITFOR ', @Delay);
+        SET @Message = CONCAT(N'FIX: Trước khi chờ (WAITFOR) ', @Delay);
 
         EXEC dbo.sp_Demo_Log
             @Scenario = @Scenario,
@@ -875,7 +1159,7 @@ BEGIN
             @Scenario = @Scenario,
             @Actor = @Actor,
             @Action = N'AFTER WAITFOR',
-            @Message = N'FIX: After WAITFOR';
+            @Message = N'FIX: Sau khi chờ (WAITFOR)';
 
         -- Kiểm tra hạn mức
         IF @TodayTotal + @TransferAmount <= @DailyLimit
@@ -884,7 +1168,7 @@ BEGIN
                 @Scenario = @Scenario,
                 @Actor = @Actor,
                 @Action = N'LIMIT CHECK',
-                @Message = N'FIX: Limit check PASSED. Before INSERT';
+                @Message = N'FIX: Kiểm tra hạn mức ĐẠT. Trước khi chèn (INSERT)';
 
             INSERT INTO dbo.Transactions (
                 TransactionId,
@@ -906,11 +1190,11 @@ BEGIN
                 @TransferAmount,
                 'success',
                 SYSDATETIME(),
-                N'PHANTOM_LIMIT_DEMO|FIX|Inserted transfer after protected SUM check'
+                N'PHANTOM_LIMIT_DEMO|FIX|Đã chèn giao dịch chuyển tiền sau khi kiểm tra SUM được bảo vệ'
             );
 
             SET @Message = CONCAT(
-                N'FIX: Inserted transfer amount = ',
+                N'FIX: Đã chèn số tiền chuyển = ',
                 CONVERT(NVARCHAR(50), CAST(@TransferAmount AS MONEY), 1),
                 N', TransactionId = ',
                 CONVERT(NVARCHAR(36), @TransactionId)
@@ -928,7 +1212,7 @@ BEGIN
                 @Scenario = @Scenario,
                 @Actor = @Actor,
                 @Action = N'LIMIT CHECK',
-                @Message = N'FIX: Limit check FAILED. No insert.';
+                @Message = N'FIX: Kiểm tra hạn mức THẤT BẠI. Không thực hiện chèn.';
         END;
 
         -- Đọc lại tổng để ghi log kiểm tra
@@ -942,7 +1226,7 @@ BEGIN
           AND Description LIKE N'PHANTOM_LIMIT_DEMO|%';
 
         SET @Message = CONCAT(
-            N'FIX: FinalTotal visible inside transaction = ',
+            N'FIX: Đọc FinalTotal nhìn thấy trong transaction = ',
             CONVERT(NVARCHAR(50), CAST(@FinalTotal AS MONEY), 1)
         );
 
@@ -958,13 +1242,13 @@ BEGIN
             @Scenario = @Scenario,
             @Actor = @Actor,
             @Action = N'COMMIT',
-            @Message = N'FIX: COMMIT';
+            @Message = N'FIX: COMMIT thành công';
     END TRY
     BEGIN CATCH
         IF @@TRANCOUNT > 0
             ROLLBACK TRANSACTION;
 
-        SET @Message = CONCAT(N'FIX ERROR: ', ERROR_MESSAGE());
+        SET @Message = CONCAT(N'LỖI FIX: ', ERROR_MESSAGE());
 
         EXEC dbo.sp_Demo_Log
             @Scenario = @Scenario,
@@ -1019,14 +1303,14 @@ BEGIN
     IF @IsFix = 1
     BEGIN
         SET @Prefix = N'FIX';
-        SET @BeginMsg = N'FIX: BEGIN TRANSACTION with SERIALIZABLE';
-        SET @ReadMsg = N'FIX: Before reading today SUM with UPDLOCK, HOLDLOCK';
+        SET @BeginMsg = N'FIX: BẮT ĐẦU GIAO DỊCH với mức cô lập SERIALIZABLE';
+        SET @ReadMsg = N'FIX: Trước khi đọc SUM hôm nay với UPDLOCK, HOLDLOCK';
     END
     ELSE
     BEGIN
         SET @Prefix = N'BAD';
-        SET @BeginMsg = N'BAD: BEGIN TRANSACTION';
-        SET @ReadMsg = N'BAD: Before reading today transfer SUM';
+        SET @BeginMsg = N'BAD: BẮT ĐẦU GIAO DỊCH';
+        SET @ReadMsg = N'BAD: Trước khi đọc SUM giao dịch hôm nay';
     END
 
     IF @IsFix = 1
@@ -1053,7 +1337,7 @@ BEGIN
         BEGIN
             SELECT @TodayTotal = ISNULL(SUM(Amount), 0)
             FROM dbo.Transactions
-            WHERE FromBankAccountId = @FromBankAccountId
+            WHERE FromBankAccountId = @FromAccountId
               AND Type = 'transfer'
               AND Status = 'success'
               AND CreatedAt >= @StartOfDay
@@ -1062,7 +1346,7 @@ BEGIN
         END
 
         -- 4. Log TodayTotal Read
-        SET @Message = @Prefix + N': TodayTotal read = ' + CONVERT(NVARCHAR(50), CAST(@TodayTotal AS MONEY), 1);
+        SET @Message = @Prefix + N': Đọc TodayTotal = ' + CONVERT(NVARCHAR(50), CAST(@TodayTotal AS MONEY), 1);
         EXEC dbo.sp_Demo_Log
             @Scenario = @Scenario,
             @Actor = @Actor,
@@ -1070,7 +1354,7 @@ BEGIN
             @Message = @Message;
 
         -- 5. Log Before WAITFOR
-        SET @Message = @Prefix + N': Before WAITFOR ' + @Delay;
+        SET @Message = @Prefix + N': Trước khi chờ (WAITFOR) ' + @Delay;
         EXEC dbo.sp_Demo_Log
             @Scenario = @Scenario,
             @Actor = @Actor,
@@ -1081,7 +1365,7 @@ BEGIN
         WAITFOR DELAY @Delay;
 
         -- 7. Log After WAITFOR
-        SET @Message = @Prefix + N': After WAITFOR';
+        SET @Message = @Prefix + N': Sau khi chờ (WAITFOR)';
         EXEC dbo.sp_Demo_Log
             @Scenario = @Scenario,
             @Actor = @Actor,
@@ -1091,7 +1375,7 @@ BEGIN
         -- 8. Limit Check
         IF @TodayTotal + @Amount > @DailyLimit
         BEGIN
-            SET @Message = @Prefix + N': Limit check FAILED. No insert.';
+            SET @Message = @Prefix + N': Kiểm tra hạn mức THẤT BẠI. Không thực hiện chèn.';
             EXEC dbo.sp_Demo_Log
                 @Scenario = @Scenario,
                 @Actor = @Actor,
@@ -1101,7 +1385,7 @@ BEGIN
             ;THROW 51001, N'Vượt hạn mức chuyển khoản trong ngày (100tr)', 1;
         END
 
-        SET @Message = @Prefix + N': Limit check PASSED. Before INSERT';
+        SET @Message = @Prefix + N': Kiểm tra hạn mức ĐẠT. Trước khi chèn (INSERT)';
         EXEC dbo.sp_Demo_Log
             @Scenario = @Scenario,
             @Actor = @Actor,

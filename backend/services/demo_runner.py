@@ -27,61 +27,93 @@ class DemoRunner:
         
         if type not in ("bad", "fix"):
             raise ValueError(f"Invalid run type '{type}'. Must be 'bad' or 'fix'.")
+
+        # Tự động dọn sạch log của scenario này trước khi chạy lượt mới
+        conn = get_conn()
+        cursor = conn.cursor()
+        try:
+            scenario_name = key.upper()
+            cursor.execute("DELETE FROM dbo.Demo_Logs WHERE Scenario = ?", scenario_name)
+            conn.commit()
+        except Exception as e:
+            print(f"[DemoRunner] Warning: failed to clear logs: {e}")
+        finally:
+            cursor.close()
+            conn.close()
         
-        if key == "phantom":
+        if key in ("phantom", "register", "statuslock"):
             import urllib.request
             import json
             
             url = "http://host.docker.internal:9000/run"
-            payload = {"demo": "phantom", "mode": type}
+            payload = {"demo": key, "mode": type}
             headers = {"Content-Type": "application/json"}
             data = json.dumps(payload).encode("utf-8")
             
-            print(f"[DemoRunner] Delegating Playwright execution to Demo Agent at {url}...")
+            print(f"[DemoRunner] Delegating {key} Playwright execution to Demo Agent at {url}...")
             req = urllib.request.Request(url, data=data, headers=headers, method="POST")
             
             try:
-                # Set a high timeout (60 seconds) to accommodate Playwright execution
                 with urllib.request.urlopen(req, timeout=60) as response:
                     res_body = response.read().decode("utf-8")
                     print(f"[DemoRunner] Demo Agent responded: {res_body}")
-                return
+            except Exception as e:
+                print(f"[DemoRunner] Failed to communicate with Demo Agent for {key}: {e}")
+                # For register and statuslock we might want to just skip browser or raise.
+                # For phantom we raised. Let's raise for consistency if agent is down.
+                if key == "phantom":
+                    raise RuntimeError(f"Communication with Demo Agent failed: {e}")
+            return
+        if key == "deadlock":
+            conn = get_conn()
+            cursor = conn.cursor()
+            try:
+                cursor.execute("SELECT BankAccountId FROM dbo.BankAccounts WHERE AccountNumber = '9704001000001'")
+                acc1 = cursor.fetchone()[0]
+                cursor.execute("SELECT BankAccountId FROM dbo.BankAccounts WHERE AccountNumber = '9704002000001'")
+                acc2 = cursor.fetchone()[0]
+            finally:
+                cursor.close()
+                conn.close()
+
+            import urllib.request
+            import json
+
+            url = "http://host.docker.internal:9000/run"
+            payload = {
+                "demo": "deadlock",
+                "mode": type,
+                "acc1": str(acc1),
+                "acc2": str(acc2)
+            }
+            headers = {"Content-Type": "application/json"}
+            data = json.dumps(payload).encode("utf-8")
+
+            print(f"[DemoRunner] Delegating deadlock Playwright to Demo Agent at {url}...")
+            req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+
+            try:
+                with urllib.request.urlopen(req, timeout=60) as response:
+                    res_body = response.read().decode("utf-8")
+                    print(f"[DemoRunner] Demo Agent responded: {res_body}")
             except Exception as e:
                 print(f"[DemoRunner] Failed to communicate with Demo Agent: {e}")
                 raise RuntimeError(f"Communication with Demo Agent failed: {e}")
 
-        proc = anomaly["procedures"][type]
-        
-        import threading
-        import time
-        
-        def run_session(delay_str: str):
-            conn = get_conn()
-            cursor = conn.cursor()
-            try:
-                cursor.execute(f"EXEC {proc} @Delay = ?", delay_str)
-                conn.commit()
-            except Exception as e:
-                print(f"Error in concurrent session with delay {delay_str}: {e}")
-            finally:
-                cursor.close()
-                conn.close()
-                
-        # Start Session 1 (slow transaction: 8 seconds delay)
-        t1 = threading.Thread(target=run_session, args=('00:00:08',))
-        
-        # Start Session 2 (fast transaction: 2 seconds delay) after a 2-second offset
-        def start_session2():
-            time.sleep(2)
-            run_session('00:00:02')
+            return
             
-        t2 = threading.Thread(target=start_session2)
-        
-        t1.start()
-        t2.start()
-        
-        t1.join()
-        t2.join()
+        # Các demo khác nếu còn sẽ chạy SP trực tiếp
+        proc = anomaly["procedures"][type]
+        conn = get_conn()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(f"EXEC {proc}")
+            conn.commit()
+        finally:
+            cursor.close()
+            conn.close()
+
+
 
     def logs(self, key: str):
         anomaly = self.registry.get_anomaly(key)

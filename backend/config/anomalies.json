@@ -11,5 +11,44 @@
       "fix": "dbo.sp_Demo_Phantom_Fix",
       "logs": "dbo.sp_Demo_GetLogs"
     }
+  },
+  "register": {
+    "displayName": "Transaction - Tạo Tài Khoản",
+    "description": "Lỗi thiếu Atomicity xảy ra khi một quy trình gồm nhiều bước ghi dữ liệu (INSERT nhiều bảng) không được bọc trong một TRANSACTION. Nếu bước cuối thất bại, các bước trước đó đã commit sẽ tạo ra dữ liệu 'mồ côi' (orphan) — không nhất quán và không thể phục hồi tự động.",
+    "scenario": "1. Quy trình đăng ký gồm 3 bước: INSERT Users → INSERT Customers → INSERT BankAccounts.\n2. [BAD] Không dùng TRANSACTION: Bước 1 và 2 thành công, bước 3 lỗi (AccountType không hợp lệ) → User và Customer bị ghi vào DB nhưng không có tài khoản ngân hàng.\n3. [FIX] Dùng sp_RegisterCustomer (có BEGIN TRANSACTION): Bước 3 lỗi → ROLLBACK toàn bộ → DB sạch như ban đầu.",
+    "expected_result": "BAD Run: Users và Customers được tạo nhưng BankAccounts không có → customer 'mồ côi'. FIX Run: Toàn bộ 3 bảng được tạo đồng thời và nhất quán, hoặc không có gì được tạo nếu lỗi xảy ra.",
+    "learning": "Luôn bọc các quy trình ghi nhiều bảng trong `BEGIN TRANSACTION ... COMMIT / ROLLBACK`. Dùng `SET XACT_ABORT ON` để tự động rollback khi có runtime error. Stored Procedure là nơi lý tưởng để đảm bảo tính nguyên tử (Atomicity) cho các business logic phức tạp.",
+    "procedures": {
+      "reset": "dbo.sp_Demo_Register_Reset",
+      "bad": "dbo.sp_Demo_Register_Bad",
+      "fix": "dbo.sp_Demo_Register_Fix",
+      "logs": "dbo.sp_Demo_GetLogs"
+    }
+  },
+  "deadlock": {
+    "displayName": "Deadlock",
+    "description": "Deadlock xảy ra khi hai hay nhiều giao dịch đồng thời giữ khóa trên các tài nguyên khác nhau và mỗi bên đều muốn chiếm khóa trên tài nguyên của bên kia, dẫn đến việc chờ đợi lẫn nhau vô hạn. SQL Server sẽ tự động phát hiện và hủy (Rollback) một giao dịch để giải phóng tài nguyên.",
+    "scenario": "1. Banker 1 bắt đầu giao dịch, cập nhật số dư Tài khoản A và chờ.\n2. Banker 2 bắt đầu giao dịch, cập nhật số dư Tài khoản B và chờ.\n3. Banker 1 thức dậy và muốn cập nhật số dư Tài khoản B (bị block bởi Banker 2).\n4. Banker 2 thức dậy và muốn cập nhật số dư Tài khoản A (bị block bởi Banker 1) -> Tạo thành chu trình bế tắc (Deadlock).\n5. SQL Server phát hiện vòng chờ và chọn Banker làm nạn nhân (Deadlock Victim), tự động rollback giao dịch đó để giao dịch còn lại hoàn thành.",
+    "expected_result": "BAD Run: SQL Server báo lỗi 1205 (Deadlock Victim) ở một Session và rollback giao dịch đó, trong khi Session còn lại commit thành công. FIX Run: Không xảy ra deadlock nhờ chiến thuật sắp xếp thứ tự khóa (Lock Ordering). Cả hai giao dịch cùng tranh chấp khóa trên tài khoản có ID nhỏ hơn trước, do đó một bên bị block xếp hàng ngay từ đầu mà không giữ khóa chéo.",
+    "learning": "Luôn sắp xếp thứ tự khóa (Lock Ordering) khi cập nhật nhiều bản ghi trong cùng một giao dịch. Khi tất cả các giao dịch chiếm khóa theo cùng một thứ tự định sẵn (ví dụ: theo thứ tự tăng dần của AccountId), bế tắc sẽ được ngăn chặn hoàn toàn ở mức thiết kế.",
+    "procedures": {
+      "reset": "dbo.sp_Demo_Deadlock_Reset",
+      "bad": "dbo.sp_Demo_Deadlock_Bad",
+      "fix": "dbo.sp_Demo_Deadlock_Fix",
+      "logs": "dbo.sp_Demo_GetLogs"
+    }
+  },
+  "statuslock": {
+    "displayName": "Non-repeatable - Giao dịch và Khóa tài khoản đồng thời",
+    "description": "Lỗi đọc không lặp lại (Non-repeatable Read) trên cột Status. Xảy ra khi một giao tác đọc trạng thái tài khoản là 'active' nhưng nhả khóa S ngay, tạo sơ hở cho giao tác khác chen vào đổi trạng thái thành 'locked'. Giao tác đầu tiếp tục thực thi và trừ tiền trên tài khoản đã bị đóng băng.",
+    "scenario": "1. [BAD] READ COMMITTED: T1 (Chuyển khoản) đọc Status='active', sau đó nhả khóa. T2 (Khóa TK) chen vào update Status='locked'. T1 tiếp tục trừ tiền → Lỗi nghiệp vụ nghiêm trọng.\n2. [FIX] Dùng UPDLOCK: T1 đọc Status WITH (UPDLOCK, ROWLOCK) và giữ khóa chữ U suốt giao dịch. T2 muốn đổi Status phải chờ T1 hoàn tất → Chuyển khoản an toàn trên TK active, khóa TK sau.",
+    "expected_result": "BAD Run: Tài khoản bị khóa (locked) nhưng tiền vẫn bị trừ thành công. FIX Run: T2 bị block chờ T1; giao dịch chuyển khoản kết thúc an toàn, sau đó tài khoản mới bị khóa.",
+    "learning": "Nghiệp vụ yêu cầu điều kiện (như trạng thái tài khoản) phải có hiệu lực tuyệt đối cho đến khi giao dịch hoàn tất. Sử dụng Lock Hint WITH (UPDLOCK, ROWLOCK) ngay tại câu lệnh SELECT kiểm tra trạng thái để khóa chặt dòng dữ liệu, ngăn chặn các tác vụ cập nhật chen ngang.",
+    "procedures": {
+      "reset": "dbo.sp_Demo_StatusLock_Reset",
+      "bad": "dbo.sp_Demo_StatusLock_Bad",
+      "fix": "dbo.sp_Demo_StatusLock_Fix",
+      "logs": "dbo.sp_Demo_GetLogs"
+    }
   }
 }

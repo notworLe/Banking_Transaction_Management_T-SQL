@@ -26,7 +26,7 @@ class TransactionForm(BaseModel):
 
 
 @router.get("/customers")
-def get_customers(user=Depends(require_role("Banker"))):
+def get_customers(user=Depends(require_role("Banker", "Admin"))):
     conn = get_conn()
     cur = conn.cursor()
     try:
@@ -45,7 +45,7 @@ def get_customers(user=Depends(require_role("Banker"))):
 
 
 @router.get("/customers/{customer_id}")
-def get_customer_detail(customer_id: str, user=Depends(require_role("Banker"))):
+def get_customer_detail(customer_id: str, user=Depends(require_role("Banker", "Admin"))):
     conn = get_conn()
     cur = conn.cursor()
     try:
@@ -78,7 +78,7 @@ def get_customer_detail(customer_id: str, user=Depends(require_role("Banker"))):
 
 
 @router.post("/accounts", status_code=201)
-def create_account(form: CreateAccountForm, user=Depends(require_role("Banker"))):
+def create_account(form: CreateAccountForm, user=Depends(require_role("Banker", "Admin"))):
     conn = get_conn()
     cur = conn.cursor()
     try:
@@ -97,20 +97,28 @@ def create_account(form: CreateAccountForm, user=Depends(require_role("Banker"))
         )
         account_id = str(cur.fetchone()[0])
 
-        cur.execute("""
-            INSERT INTO AuditLogs (UserId, ActionType, TargetTable, TargetId, Description)
-            VALUES (?, 'CREATE_ACCOUNT', 'BankAccounts', ?, ?)
-        """, user["user_id"], account_id,
-            f"Banker tạo tài khoản {form.account_type} - {form.account_number}")
-        conn.commit()
-        return {"message": "Tạo tài khoản thành công", "account_id": account_id}
+        conn.commit()  # commit account truoc
+
+        try:
+            cur.execute("SELECT 1 FROM Users WHERE UserId = ?", user["user_id"])
+            if cur.fetchone():
+                cur.execute("""
+                    INSERT INTO AuditLogs (UserId, ActionType, TargetTable, TargetId, Description)
+                    VALUES (?, 'CREATE_ACCOUNT', 'BankAccounts', ?, ?)
+                """, user["user_id"], account_id,
+                    f"Banker tao tai khoan {form.account_type} - {form.account_number}")
+                conn.commit()
+        except Exception as e:
+            print(f"[AuditLog] {e}")
+
+        return {"message": "Tao tai khoan thanh cong", "account_id": account_id}
     finally:
         cur.close(); conn.close()
 
 
 @router.patch("/accounts/{account_id}/status")
 def update_account_status(account_id: str, form: UpdateAccountStatusForm,
-                          user=Depends(require_role("Banker"))):
+                          user=Depends(require_role("Banker", "Admin"))):
     conn = get_conn()
     cur = conn.cursor()
     try:
@@ -118,29 +126,54 @@ def update_account_status(account_id: str, form: UpdateAccountStatusForm,
                     form.status, account_id)
         action = {"locked": "LOCK_ACCOUNT", "active": "UNLOCK_ACCOUNT",
                   "closed": "CLOSE_ACCOUNT"}.get(form.status, "UPDATE_ACCOUNT")
-        cur.execute("""
-            INSERT INTO AuditLogs (UserId, ActionType, TargetTable, TargetId, Description)
-            VALUES (?, ?, 'BankAccounts', ?, ?)
-        """, user["user_id"], action, account_id, f"Banker {action} accountId={account_id}")
-        conn.commit()
-        return {"message": f"Cập nhật trạng thái thành {form.status}"}
+        conn.commit()  # commit status truoc
+
+        try:
+            cur.execute("SELECT 1 FROM Users WHERE UserId = ?", user["user_id"])
+            if cur.fetchone():
+                cur.execute("""
+                    INSERT INTO AuditLogs (UserId, ActionType, TargetTable, TargetId, Description)
+                    VALUES (?, ?, 'BankAccounts', ?, ?)
+                """, user["user_id"], action, account_id, f"Banker {action} accountId={account_id}")
+                conn.commit()
+        except Exception as e:
+            print(f"[AuditLog] {e}")
+
+        return {"message": f"Cap nhat trang thai thanh {form.status}"}
     finally:
         cur.close(); conn.close()
 
 
 @router.post("/transactions")
-def perform_transaction(form: TransactionForm, user=Depends(require_role("Banker"))):
+def perform_transaction(form: TransactionForm, user=Depends(require_role("Banker", "Admin"))):
     conn = get_conn()
     cur = conn.cursor()
     try:
-        if form.transaction_type == "deposit":
-            cur.execute("EXEC sp_Deposit ?, ?, ?, ?",
-                        form.account_id, form.amount, user["user_id"], form.description)
-        elif form.transaction_type == "withdraw":
-            cur.execute("EXEC sp_Withdraw ?, ?, ?, ?",
-                        form.account_id, form.amount, user["user_id"], form.description)
+        # Check if this is a deadlock demo transaction
+        is_demo = False
+        if form.description and form.description.startswith("DEADLOCK_DEMO|"):
+            parts = form.description.split("|")
+            if len(parts) >= 6:
+                type_name = parts[1]      # "BAD" or "FIX"
+                delay_str = parts[2]      # e.g., "00:00:08" or "00:00:02"
+                first_acc_id = parts[4]
+                second_acc_id = parts[5]
+                is_demo = True
+
+        if is_demo:
+            proc = "sp_Demo_Deadlock_Bad" if type_name == "BAD" else "sp_Demo_Deadlock_Fix"
+            print(f"[API /banker/transactions] Calling {proc} (@FirstAccountId={first_acc_id}, @SecondAccountId={second_acc_id}, @Delay={delay_str})")
+            cur.execute(f"EXEC dbo.{proc} @FirstAccountId = ?, @SecondAccountId = ?, @Delay = ?",
+                        first_acc_id, second_acc_id, delay_str)
         else:
-            raise HTTPException(status_code=400, detail="Loại giao dịch không hợp lệ")
+            if form.transaction_type == "deposit":
+                cur.execute("EXEC sp_Deposit ?, ?, ?, ?",
+                            form.account_id, form.amount, user["user_id"], form.description)
+            elif form.transaction_type == "withdraw":
+                cur.execute("EXEC sp_Withdraw ?, ?, ?, ?",
+                            form.account_id, form.amount, user["user_id"], form.description)
+            else:
+                raise HTTPException(status_code=400, detail="Loại giao dịch không hợp lệ")
         conn.commit()
         return {"message": "Giao dịch thành công"}
     except Exception as e:
@@ -151,7 +184,7 @@ def perform_transaction(form: TransactionForm, user=Depends(require_role("Banker
 
 
 @router.get("/transactions")
-def get_transactions(user=Depends(require_role("Banker"))):
+def get_transactions(user=Depends(require_role("Banker", "Admin"))):
     conn = get_conn()
     cur = conn.cursor()
     try:
@@ -174,7 +207,7 @@ def get_transactions(user=Depends(require_role("Banker"))):
 
 
 @router.get("/accounts")
-def get_all_accounts(user=Depends(require_role("Banker"))):
+def get_all_accounts(user=Depends(require_role("Banker", "Admin"))):
     conn = get_conn()
     cur = conn.cursor()
     try:

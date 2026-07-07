@@ -1,14 +1,16 @@
 import React from 'react';
 
 export default function DemoTimeline({ logs, loading }) {
-  // Extract all unique SessionIds from logs
+  // Extract all unique SessionIds from logs (excluding System logs so they don't create empty columns)
   const sessionIdsSet = new Set();
   logs.forEach(log => {
-    if (log.SessionId) {
+    if (log.SessionId && log.Actor !== 'System') {
       sessionIdsSet.add(String(log.SessionId));
     }
   });
-  const sessionIds = Array.from(sessionIdsSet).sort((a, b) => a.localeCompare(b));
+  const sessionIds = sessionIdsSet.size > 0 
+    ? Array.from(sessionIdsSet).sort((a, b) => a.localeCompare(b))
+    : ['System'];
 
   // Sort all logs chronologically (by ActionTime, then LogId as a tie-breaker)
   const sortedLogs = [...logs].sort((a, b) => {
@@ -68,10 +70,38 @@ export default function DemoTimeline({ logs, loading }) {
 
         {/* Chronological Steps */}
         {sortedLogs.map((log, index) => {
-          const isError = log.Message?.toUpperCase().includes('ERROR') || log.Action?.toUpperCase().includes('ERROR');
+          const isError = log.Message?.toUpperCase().includes('ERROR') || 
+                          log.Action?.toUpperCase().includes('ERROR') ||
+                          log.Action?.toUpperCase().includes('DEADLOCK') ||
+                          log.Action?.toUpperCase().includes('ROLLBACK');
           const isReset = log.Action === 'RESET';
-          const isLimitPass = log.Message?.includes('Limit check PASSED') || log.Message?.includes('Limit check FAILED') || log.Message?.includes('baseline');
-          const badgeColor = isReset ? 'badge-active' : isError ? 'badge-failed' : isLimitPass ? 'badge-success' : 'badge-pending';
+          const isSuccess = log.Message?.includes('Limit check PASSED') || 
+                            log.Message?.includes('baseline') || 
+                            log.Action === 'COMMIT';
+          const badgeColor = isReset ? 'badge-active' : isError ? 'badge-failed' : isSuccess ? 'badge-success' : 'badge-pending';
+
+          if (isReset) {
+            return (
+              <div 
+                key={log.LogId || index} 
+                style={{ 
+                  gridColumn: `1 / span ${sessionIds.length}`, 
+                  textAlign: 'center',
+                  background: 'var(--black)',
+                  border: '2px solid var(--black)',
+                  color: 'var(--yellow)',
+                  padding: '12px',
+                  fontWeight: '800',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '13px',
+                  boxShadow: '3px 3px 0px var(--black)',
+                  margin: '10px 0'
+                }}
+              >
+                🔄 {log.Message} ({log.ActionTime ? new Date(log.ActionTime).toLocaleTimeString('vi-VN') : '—'})
+              </div>
+            );
+          }
 
           return (
             <React.Fragment key={log.LogId || index}>

@@ -58,6 +58,11 @@ BEGIN
         THROW 51000, N'Không đủ dữ liệu mẫu: cần ít nhất 2 tài khoản active và 1 user active.', 1;
     END;
 
+    -- Reset balance of from account to 200M so we have enough balance to demo limit
+    UPDATE dbo.BankAccounts
+    SET Balance = 200000000.00
+    WHERE BankAccountId = @FromAccountId;
+
     -- 4. Tạo baseline giao dịch chuyển khoản 80.000.000 VND cho ngày hôm nay
     INSERT INTO dbo.Transactions (
         TransactionId,
@@ -79,7 +84,7 @@ BEGIN
         80000000.00,
         'success',
         SYSDATETIME(),
-        N'PHANTOM_LIMIT_DEMO|BASELINE|Today total starts at 80,000,000'
+        N'PHANTOM_LIMIT_DEMO|BASELINE|Tổng hôm nay bắt đầu từ 80,000,000'
     );
 
     -- 5. Ghi log hoàn thành reset
@@ -87,6 +92,6 @@ BEGIN
         @Scenario = @Scenario,
         @Actor = @Actor,
         @Action = @Action,
-        @Message = N'Reset complete. Baseline transfer = 80,000,000.';
+        @Message = N'Hoàn tất reset. Giao dịch gốc = 80.000.000.';
 END;
 GO

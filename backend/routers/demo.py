@@ -53,6 +53,14 @@ def run_anomaly(key: str, body: RunBody):
     try:
         runner.run(key, body.type)
         return {"status": "success", "message": f"Run '{body.type}' for '{key}' completed successfully."}
+    except RuntimeError as e:
+        # Demo Agent chưa chạy hoặc không thể kết nối
+        if "Communication with Demo Agent failed" in str(e):
+            raise HTTPException(
+                status_code=503,
+                detail="DEMO_AGENT_UNAVAILABLE"
+            )
+        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -70,3 +78,49 @@ def get_logs(key: str):
         return logs_list
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# ==========================================
+# ENDPOINTS CHO STATUSLOCK PLAYWRIGHT DEMO
+# ==========================================
+
+from dependencies import require_role
+from fastapi import Depends
+from database import get_conn
+
+class StatusLockTransferForm(BaseModel):
+    is_fix: bool
+
+@router.post("/statuslock_transfer")
+def statuslock_transfer(form: StatusLockTransferForm, user=Depends(require_role("Customer"))):
+    """Endpoint cho Playwright T1 (Customer) gọi để chạy Transfer có delay"""
+    conn = get_conn()
+    conn.autocommit = True
+    cur = conn.cursor()
+    try:
+        proc = "sp_Demo_StatusLock_Fix" if form.is_fix else "sp_Demo_StatusLock_Bad"
+        cur.execute(f"EXEC {proc} @Delay = '00:00:05', @Role = 'TRANSFER'")
+        return {"message": "Transfer completed (demo)"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+class StatusLockLockForm(BaseModel):
+    is_fix: bool
+
+@router.patch("/statuslock_lock/{account_id}")
+def statuslock_lock(account_id: str, form: StatusLockLockForm, user=Depends(require_role("Banker"))):
+    """Endpoint cho Playwright T2 (Banker) gọi để chạy Lock có delay"""
+    conn = get_conn()
+    conn.autocommit = True
+    cur = conn.cursor()
+    try:
+        proc = "sp_Demo_StatusLock_Fix" if form.is_fix else "sp_Demo_StatusLock_Bad"
+        cur.execute(f"EXEC {proc} @Delay = '00:00:02', @Role = 'LOCK'")
+        return {"message": "Lock completed (demo)"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
