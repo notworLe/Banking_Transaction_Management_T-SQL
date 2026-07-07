@@ -12,6 +12,8 @@ const NAV = {
     { key: 'overview', icon: '📊', label: 'Tổng quan' },
     { key: 'users',    icon: '👥', label: 'Users' },
     { key: 'bankers',  icon: '🏦', label: 'Bankers' },
+    { key: 'accounts', icon: '💳', label: 'Tài khoản' },
+    { key: 'transactions', icon: '💸', label: 'Giao dịch' },
     { key: 'audit',    icon: '📋', label: 'Audit Logs' },
     { key: 'logins',   icon: '🔐', label: 'Login Logs' },
     { key: 'demo',     icon: '🧪', label: 'Demo T-SQL' },
@@ -61,6 +63,8 @@ function PageContent({ role, page, toast }) {
     if (page === 'overview')  return <><div className="page-header"><h2>TỔNG QUAN HỆ THỐNG</h2><p>Thống kê tổng hợp</p></div><AdminStats /></>;
     if (page === 'users')     return <><div className="page-header"><h2>QUẢN LÝ USERS</h2><p>Khóa / mở tài khoản</p></div><AdminUsers toast={toast} /></>;
     if (page === 'bankers')   return <><div className="page-header"><h2>QUẢN LÝ BANKERS</h2><p>Tạo và quản lý nhân viên</p></div><AdminBankers toast={toast} /></>;
+    if (page === 'accounts')  return <><div className="page-header"><h2>TÀI KHOẢN TOÀN HỆ THỐNG</h2><p>Xem số dư khách hàng</p></div><BankerAccounts toast={toast} /></>;
+    if (page === 'transactions') return <><div className="page-header"><h2>GIAO DỊCH TOÀN HỆ THỐNG</h2><p>Lịch sử giao dịch</p></div><BankerTransactions toast={toast} /></>;
     if (page === 'audit')     return <><div className="page-header"><h2>AUDIT LOGS</h2><p>Nhật ký hoạt động hệ thống</p></div><AdminAuditLogs /></>;
     if (page === 'logins')    return <><div className="page-header"><h2>LOGIN LOGS</h2><p>Lịch sử đăng nhập</p></div><AdminLoginLogs /></>;
     if (page === 'demo')      return <><div className="page-header"><h2>DEMO CONCURRENCY ANOMALIES</h2><p>Mô phỏng và khắc phục tranh chấp giao dịch</p></div><TransactionDemo toast={toast} /></>;

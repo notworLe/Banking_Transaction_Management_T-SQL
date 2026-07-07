@@ -22,6 +22,9 @@ services:
       - ./database/demo/deadlock/01_reset.sql:/demo/deadlock/01_reset.sql
       - ./database/demo/deadlock/02_bad.sql:/demo/deadlock/02_bad.sql
       - ./database/demo/deadlock/03_fix.sql:/demo/deadlock/03_fix.sql
+      - ./database/demo/statuslock/01_reset.sql:/demo/statuslock/01_reset.sql
+      - ./database/demo/statuslock/02_bad.sql:/demo/statuslock/02_bad.sql
+      - ./database/demo/statuslock/03_fix.sql:/demo/statuslock/03_fix.sql
     entrypoint: bash /entrypoint.sh
     healthcheck:
       test: /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "BankingDB@2024" -Q "SELECT 1" -C || exit 1

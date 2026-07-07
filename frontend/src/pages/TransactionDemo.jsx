@@ -86,6 +86,9 @@ export default function TransactionDemo({ toast }) {
     setLoading(true);
     setAgentDown(false);
     try {
+      // Auto-reset before run to ensure clean state
+      await apiFetch(`/api/demo/${selectedKey}/reset`, { method: 'POST' });
+      
       await apiFetch(`/api/demo/${selectedKey}/run`, {
         method: 'POST',
         body: JSON.stringify({ type })

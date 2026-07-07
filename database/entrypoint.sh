@@ -24,13 +24,19 @@ echo "Running 02_bad.sql (phantom)..."
 /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$SA_PASSWORD" -i /demo/phantom/02_bad.sql -C
 echo "Running 03_fix.sql (phantom)..."
 /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$SA_PASSWORD" -i /demo/phantom/03_fix.sql -C
-
 echo "Running 01_reset.sql (deadlock)..."
 /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$SA_PASSWORD" -i /demo/deadlock/01_reset.sql -C
 echo "Running 02_bad.sql (deadlock)..."
 /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$SA_PASSWORD" -i /demo/deadlock/02_bad.sql -C
 echo "Running 03_fix.sql (deadlock)..."
 /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$SA_PASSWORD" -i /demo/deadlock/03_fix.sql -C
+
+echo "Running statuslock 01_reset.sql..."
+/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$SA_PASSWORD" -i /demo/statuslock/01_reset.sql -C
+echo "Running statuslock 02_bad.sql..."
+/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$SA_PASSWORD" -i /demo/statuslock/02_bad.sql -C
+echo "Running statuslock 03_fix.sql..."
+/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$SA_PASSWORD" -i /demo/statuslock/03_fix.sql -C
 echo "All demo scripts done!"
 
 # Giá»¯ SQL Server cháº¡y
