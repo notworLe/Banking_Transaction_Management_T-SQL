@@ -148,8 +148,11 @@ try:
     print("[DemoAgent] Playwright runner threading patches successfully applied.")
 
     from automation.playwright_runner import run_phantom_bad, run_phantom_fix
+    from automation.register_runner import run_register_bad, run_register_fix
 except ImportError as e:
-    print(f"Error importing playwright_runner: {e}")
+    print(f"Error importing automation modules: {e}")
+    import traceback
+    traceback.print_exc()
     sys.exit(1)
 
 app = FastAPI(title="Banking Transaction Management Demo Agent")
@@ -162,19 +165,27 @@ class RunRequest(BaseModel):
 def run_demo(req: RunRequest):
     print(f"[DemoAgent] Received run request: demo={req.demo}, mode={req.mode}")
     
-    if req.demo != "phantom":
+    if req.demo not in ("phantom", "register"):
         raise HTTPException(status_code=400, detail=f"Unsupported demo scenario: {req.demo}")
         
     if req.mode not in ("bad", "fix"):
         raise HTTPException(status_code=400, detail=f"Unsupported mode: {req.mode}. Must be 'bad' or 'fix'.")
         
     try:
-        if req.mode == "bad":
-            print("[DemoAgent] Starting Run Bad simulation...")
-            run_phantom_bad()
-        else:
-            print("[DemoAgent] Starting Run Fix simulation...")
-            run_phantom_fix()
+        if req.demo == "phantom":
+            if req.mode == "bad":
+                print("[DemoAgent] Starting Phantom Run Bad simulation...")
+                run_phantom_bad()
+            else:
+                print("[DemoAgent] Starting Phantom Run Fix simulation...")
+                run_phantom_fix()
+        elif req.demo == "register":
+            if req.mode == "bad":
+                print("[DemoAgent] Starting Register Run Bad demo...")
+                run_register_bad()
+            else:
+                print("[DemoAgent] Starting Register Run Fix demo...")
+                run_register_fix()
             
         print("[DemoAgent] Simulation completed successfully!")
         return {"status": "success", "message": f"Successfully completed {req.demo} in {req.mode} mode."}

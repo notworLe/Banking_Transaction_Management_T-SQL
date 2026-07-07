@@ -100,6 +100,19 @@ function AdminBankers({ toast }) {
   const [form, setForm] = useState({ username: '', password: '', full_name: '', email: '', phone: '', employee_code: '' });
   const load = () => apiFetch('/api/admin/bankers').then(setBankers).catch(() => {});
   useEffect(() => { load(); }, []);
+
+  const toggleStatus = async (b) => {
+    const ns = b.status === 'active' ? 'locked' : 'active';
+    try {
+      await apiFetch(`/api/admin/users/${b.user_id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: ns })
+      });
+      toast.ok(`Đã ${ns === 'locked' ? 'khóa' : 'mở khóa'} banker ${b.username}`);
+      load();
+    } catch (e) { toast.err(e.message); }
+  };
+
   const submit = async (e) => {
     e.preventDefault();
     try {
@@ -117,7 +130,7 @@ function AdminBankers({ toast }) {
           <h3>Danh sách Bankers</h3>
           <button className="btn btn-primary btn-sm" onClick={() => setModal(true)}>+ TẠO BANKER</button>
         </div>
-        <table><thead><tr><th>Mã NV</th><th>Họ tên</th><th>Username</th><th>Email</th><th>SĐT</th><th>Status</th></tr></thead>
+        <table><thead><tr><th>Mã NV</th><th>Họ tên</th><th>Username</th><th>Email</th><th>SĐT</th><th>Status</th><th></th></tr></thead>
           <tbody>
             {bankers.map(b => (
               <tr key={b.banker_id}>
@@ -127,6 +140,14 @@ function AdminBankers({ toast }) {
                 <td>{b.email}</td>
                 <td className="mono">{b.phone}</td>
                 <td><span className={`badge badge-${b.status}`}>{b.status}</span></td>
+                <td>
+                  <button
+                    className={`btn btn-sm ${b.status === 'active' ? 'btn-magenta' : 'btn-cyan'}`}
+                    onClick={() => toggleStatus(b)}
+                  >
+                    {b.status === 'active' ? 'KHÓA' : 'MỞ KHÓA'}
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -158,6 +179,7 @@ function AdminBankers({ toast }) {
     </>
   );
 }
+
 
 function AdminAuditLogs() {
   const [logs, setLogs] = useState([]);

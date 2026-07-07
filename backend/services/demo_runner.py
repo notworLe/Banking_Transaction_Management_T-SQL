@@ -41,7 +41,6 @@ class DemoRunner:
             req = urllib.request.Request(url, data=data, headers=headers, method="POST")
             
             try:
-                # Set a high timeout (60 seconds) to accommodate Playwright execution
                 with urllib.request.urlopen(req, timeout=60) as response:
                     res_body = response.read().decode("utf-8")
                     print(f"[DemoRunner] Demo Agent responded: {res_body}")
@@ -49,6 +48,45 @@ class DemoRunner:
             except Exception as e:
                 print(f"[DemoRunner] Failed to communicate with Demo Agent: {e}")
                 raise RuntimeError(f"Communication with Demo Agent failed: {e}")
+
+        if key == "register":
+            # 1) Chạy SP trước để ghi Demo_Logs (timeline)
+            proc = anomaly["procedures"][type]
+            conn = get_conn()
+            cursor = conn.cursor()
+            try:
+                print(f"[DemoRunner] Running register SP ({type}): {proc}")
+                cursor.execute(f"EXEC {proc}")
+                conn.commit()
+                print(f"[DemoRunner] Register SP ({type}) completed.")
+            except Exception as e:
+                print(f"[DemoRunner] Register SP error: {e}")
+            finally:
+                cursor.close()
+                conn.close()
+
+            # 2) Delegate sang demo_agent để Playwright mở browser
+            import urllib.request
+            import json
+
+            url = "http://host.docker.internal:9000/run"
+            payload = {"demo": "register", "mode": type}
+            headers = {"Content-Type": "application/json"}
+            data = json.dumps(payload).encode("utf-8")
+
+            print(f"[DemoRunner] Delegating register Playwright to Demo Agent at {url}...")
+            req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+
+            try:
+                with urllib.request.urlopen(req, timeout=60) as response:
+                    res_body = response.read().decode("utf-8")
+                    print(f"[DemoRunner] Demo Agent responded: {res_body}")
+            except Exception as e:
+                print(f"[DemoRunner] Demo Agent unavailable (browser demo skipped): {e}")
+                # Không raise — SP đã chạy xong, chỉ skip phần browser
+
+            return
+
 
         proc = anomaly["procedures"][type]
         
@@ -82,6 +120,7 @@ class DemoRunner:
         
         t1.join()
         t2.join()
+
 
     def logs(self, key: str):
         anomaly = self.registry.get_anomaly(key)

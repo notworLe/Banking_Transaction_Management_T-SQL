@@ -11,5 +11,18 @@
       "fix": "dbo.sp_Demo_Phantom_Fix",
       "logs": "dbo.sp_Demo_GetLogs"
     }
+  },
+  "register": {
+    "displayName": "Transaction - Tạo Tài Khoản",
+    "description": "Lỗi thiếu Atomicity xảy ra khi một quy trình gồm nhiều bước ghi dữ liệu (INSERT nhiều bảng) không được bọc trong một TRANSACTION. Nếu bước cuối thất bại, các bước trước đó đã commit sẽ tạo ra dữ liệu 'mồ côi' (orphan) — không nhất quán và không thể phục hồi tự động.",
+    "scenario": "1. Quy trình đăng ký gồm 3 bước: INSERT Users → INSERT Customers → INSERT BankAccounts.\n2. [BAD] Không dùng TRANSACTION: Bước 1 và 2 thành công, bước 3 lỗi (AccountType không hợp lệ) → User và Customer bị ghi vào DB nhưng không có tài khoản ngân hàng.\n3. [FIX] Dùng sp_RegisterCustomer (có BEGIN TRANSACTION): Bước 3 lỗi → ROLLBACK toàn bộ → DB sạch như ban đầu.",
+    "expected_result": "BAD Run: Users và Customers được tạo nhưng BankAccounts không có → customer 'mồ côi'. FIX Run: Toàn bộ 3 bảng được tạo đồng thời và nhất quán, hoặc không có gì được tạo nếu lỗi xảy ra.",
+    "learning": "Luôn bọc các quy trình ghi nhiều bảng trong `BEGIN TRANSACTION ... COMMIT / ROLLBACK`. Dùng `SET XACT_ABORT ON` để tự động rollback khi có runtime error. Stored Procedure là nơi lý tưởng để đảm bảo tính nguyên tử (Atomicity) cho các business logic phức tạp.",
+    "procedures": {
+      "reset": "dbo.sp_Demo_Register_Reset",
+      "bad": "dbo.sp_Demo_Register_Bad",
+      "fix": "dbo.sp_Demo_Register_Fix",
+      "logs": "dbo.sp_Demo_GetLogs"
+    }
   }
 }

@@ -70,22 +70,82 @@ def register(form: RegisterForm):
     conn = get_conn()
     cur = conn.cursor()
     try:
+        hashed = hash_password(form.password)
+
+        # Gọi stored procedure sp_RegisterCustomer
+        # SP tự xử lý: kiểm tra trùng lặp, tạo User + Customer + BankAccount
+        # trong 1 atomic transaction
+        cur.execute("""
+            DECLARE @UserId       UNIQUEIDENTIFIER,
+                    @CustomerId   UNIQUEIDENTIFIER,
+                    @AccountNumber NVARCHAR(20);
+
+            EXEC dbo.sp_RegisterCustomer
+                @Username     = ?,
+                @PasswordHash = ?,
+                @FullName     = ?,
+                @Email        = ?,
+                @PhoneNumber  = ?,
+                @Address      = ?,
+                @BirthDay     = ?,
+                @UserId       = @UserId       OUTPUT,
+                @CustomerId   = @CustomerId   OUTPUT,
+                @AccountNumber = @AccountNumber OUTPUT;
+
+            SELECT @UserId AS UserId, @CustomerId AS CustomerId, @AccountNumber AS AccountNumber;
+        """,
+            form.username, hashed, form.full_name,
+            form.email, form.phone,
+            form.address or None,
+            form.birthday or None
+        )
+
+        row = cur.fetchone()
+        conn.commit()
+
+        return {
+            "message": "Đăng ký thành công",
+            "user_id": str(row[0]),
+            "customer_id": str(row[1]),
+            "account_number": str(row[2])
+        }
+
+    except pyodbc.ProgrammingError as e:
+        conn.rollback()
+        msg = str(e)
+        if "50010" in msg:
+            raise HTTPException(status_code=400, detail="Username đã tồn tại")
+        if "50011" in msg:
+            raise HTTPException(status_code=400, detail="Email đã được sử dụng")
+        if "50012" in msg:
+            raise HTTPException(status_code=400, detail="Số điện thoại đã được sử dụng")
+        raise HTTPException(status_code=500, detail=f"Lỗi hệ thống: {msg}")
+    except pyodbc.IntegrityError:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail="Dữ liệu bị trùng lặp")
+    finally:
+        cur.close()
+        conn.close()
+
+
+@router.post("/register_bad", status_code=201)
+def register_bad(form: RegisterForm):
+    """Đăng ký KHÔNG dùng TRANSACTION — dùng cho demo Atomicity.
+    Cố tình INSERT BankAccount với AccountType không hợp lệ để gây lỗi.
+    User + Customer vẫn được commit → orphan data."""
+    conn = get_conn()
+    cur = conn.cursor()
+    try:
+        # Lấy role Customer
         cur.execute("SELECT RoleId FROM Roles WHERE RoleName = 'Customer'")
         role_row = cur.fetchone()
         if not role_row:
             raise HTTPException(status_code=500, detail="Role Customer không tồn tại")
         role_id = str(role_row[0])
 
-        cur.execute("SELECT 1 FROM Users WHERE Username = ?", form.username)
-        if cur.fetchone():
-            raise HTTPException(status_code=400, detail="Username đã tồn tại")
-
-        cur.execute("SELECT 1 FROM Customers WHERE Email = ?", form.email)
-        if cur.fetchone():
-            raise HTTPException(status_code=400, detail="Email đã được sử dụng")
-
         hashed = hash_password(form.password)
 
+        # Bước 1: INSERT User — KHÔNG CÓ TRANSACTION
         cur.execute(
             "INSERT INTO Users (RoleId, Username, PasswordHash)"
             " OUTPUT INSERTED.UserId"
@@ -93,21 +153,47 @@ def register(form: RegisterForm):
             role_id, form.username, hashed
         )
         user_id = str(cur.fetchone()[0])
+        conn.commit()  # Commit ngay — không an toàn!
 
+        # Bước 2: INSERT Customer — KHÔNG CÓ TRANSACTION
         cur.execute(
             "INSERT INTO Customers (UserId, FullName, Email, PhoneNumber, Address, BirthDay)"
+            " OUTPUT INSERTED.CustomerId"
             " VALUES (?, ?, ?, ?, ?, ?)",
-            user_id, form.full_name, form.email, form.phone, form.address, form.birthday
+            user_id, form.full_name, form.email, form.phone,
+            form.address or None, form.birthday or None
         )
+        customer_id = str(cur.fetchone()[0])
+        conn.commit()  # Commit ngay — User + Customer đã lưu!
 
-        conn.commit()
-        return {"message": "Đăng ký thành công", "user_id": user_id}
+        # Bước 3: INSERT BankAccount — CỐ TÌNH LỖI (AccountType='INVALID')
+        bank_account_error = None
+        try:
+            cur.execute(
+                "INSERT INTO BankAccounts (CustomerId, AccountNumber, AccountType, Balance)"
+                " VALUES (?, ?, ?, ?)",
+                customer_id, '9704_BAD_' + form.username[:6], 'INVALID_TYPE', 0.00
+            )
+            conn.commit()
+        except Exception as e:
+            bank_account_error = str(e)
+            # KHÔNG rollback User + Customer — đây chính là vấn đề!
+
+        return {
+            "message": "Đăng ký hoàn tất (BAD — không có transaction)",
+            "user_id": user_id,
+            "customer_id": customer_id,
+            "bank_account_created": bank_account_error is None,
+            "bank_account_error": bank_account_error
+        }
+
     except pyodbc.IntegrityError:
         conn.rollback()
         raise HTTPException(status_code=400, detail="Dữ liệu bị trùng lặp")
     finally:
         cur.close()
         conn.close()
+
 
 
 @router.post("/logout")

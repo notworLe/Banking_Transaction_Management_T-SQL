@@ -228,6 +228,259 @@ GO
 -- STORED PROCEDURES
 -- ============================================================
 
+-- ──────────────────────────────────────────────────────────────
+-- sp_RegisterCustomer
+-- Đăng ký khách hàng mới + tạo tài khoản thanh toán mặc định
+-- Tất cả trong 1 atomic transaction: nếu bất kỳ bước nào lỗi
+-- thì toàn bộ bị ROLLBACK (không có user "mồ côi" hay customer
+-- không có tài khoản).
+-- ──────────────────────────────────────────────────────────────
+CREATE OR ALTER PROCEDURE dbo.sp_RegisterCustomer
+    @Username     NVARCHAR(100),
+    @PasswordHash NVARCHAR(256),   -- bcrypt hash từ Python
+    @FullName     NVARCHAR(150),
+    @Email        NVARCHAR(200),
+    @PhoneNumber  NVARCHAR(20),
+    @Address      NVARCHAR(500)  = NULL,
+    @BirthDay     DATE           = NULL,
+    -- OUTPUT params để trả kết quả về Python
+    @UserId       UNIQUEIDENTIFIER OUTPUT,
+    @CustomerId   UNIQUEIDENTIFIER OUTPUT,
+    @AccountNumber NVARCHAR(20)  OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;   -- tự ROLLBACK nếu có lỗi runtime
+
+    BEGIN TRANSACTION;
+    BEGIN TRY
+
+        -- ── 1. Kiểm tra username / email chưa tồn tại ────────
+        IF EXISTS (SELECT 1 FROM dbo.Users WHERE Username = @Username)
+            THROW 50010, N'Username đã tồn tại', 1;
+
+        IF EXISTS (SELECT 1 FROM dbo.Customers WHERE Email = @Email)
+            THROW 50011, N'Email đã được sử dụng', 1;
+
+        IF EXISTS (SELECT 1 FROM dbo.Customers WHERE PhoneNumber = @PhoneNumber)
+            THROW 50012, N'Số điện thoại đã được sử dụng', 1;
+
+        -- ── 2. Lấy RoleId của Customer ────────────────────────
+        DECLARE @RoleId UNIQUEIDENTIFIER;
+        SELECT @RoleId = RoleId FROM dbo.Roles WHERE RoleName = 'Customer';
+        IF @RoleId IS NULL
+            THROW 50013, N'Role Customer không tồn tại trong hệ thống', 1;
+
+        -- ── 3. Tạo User ───────────────────────────────────────
+        SET @UserId = NEWID();
+        INSERT INTO dbo.Users (UserId, RoleId, Username, PasswordHash)
+        VALUES (@UserId, @RoleId, @Username, @PasswordHash);
+
+        -- ── 4. Tạo Customer profile ───────────────────────────
+        SET @CustomerId = NEWID();
+        INSERT INTO dbo.Customers (CustomerId, UserId, FullName, Email, PhoneNumber, Address, BirthDay)
+        VALUES (@CustomerId, @UserId, @FullName, @Email, @PhoneNumber, @Address, @BirthDay);
+
+        -- ── 5. Sinh số tài khoản tự động (9704 + 9 chữ số) ───
+        -- Dùng timestamp microseconds để đảm bảo unique
+        DECLARE @Suffix NVARCHAR(9);
+        SET @Suffix = RIGHT('000000000' + CAST(
+            ABS(CHECKSUM(NEWID())) % 1000000000
+        AS NVARCHAR(9)), 9);
+        SET @AccountNumber = '9704' + @Suffix;
+
+        -- Đảm bảo số TK chưa tồn tại (collision rất hiếm nhưng phòng ngừa)
+        WHILE EXISTS (SELECT 1 FROM dbo.BankAccounts WHERE AccountNumber = @AccountNumber)
+        BEGIN
+            SET @Suffix = RIGHT('000000000' + CAST(
+                ABS(CHECKSUM(NEWID())) % 1000000000
+            AS NVARCHAR(9)), 9);
+            SET @AccountNumber = '9704' + @Suffix;
+        END
+
+        -- ── 6. Tạo BankAccount thanh toán mặc định ───────────
+        INSERT INTO dbo.BankAccounts (CustomerId, AccountNumber, AccountType, Balance)
+        VALUES (@CustomerId, @AccountNumber, 'payment', 0.00);
+
+        COMMIT TRANSACTION;
+
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0
+            ROLLBACK TRANSACTION;
+        -- Re-throw lỗi lên tầng Python để xử lý
+        THROW;
+    END CATCH
+END;
+GO
+
+-- ──────────────────────────────────────────────────────────────
+-- DEMO: ATOMICITY - Tạo tài khoản Customer
+-- Kịch bản minh họa tầm quan trọng của BEGIN TRANSACTION
+-- ──────────────────────────────────────────────────────────────
+
+-- 1. RESET: Dọn dữ liệu demo
+CREATE OR ALTER PROCEDURE dbo.sp_Demo_Register_Reset
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- Xóa users demo (cascade xóa Customers, LoginLogs, AuditLogs liên quan)
+    -- Xóa theo đúng thứ tự FK
+    DELETE FROM dbo.AuditLogs
+    WHERE UserId IN (SELECT UserId FROM dbo.Users WHERE Username LIKE 'demo_%');
+
+    DELETE FROM dbo.LoginLogs
+    WHERE UserId IN (SELECT UserId FROM dbo.Users WHERE Username LIKE 'demo_%');
+
+    -- Xóa BankAccounts của demo customers
+    DELETE FROM dbo.BankAccounts
+    WHERE CustomerId IN (
+        SELECT c.CustomerId FROM dbo.Customers c
+        JOIN dbo.Users u ON c.UserId = u.UserId
+        WHERE u.Username LIKE 'demo_%'
+    );
+
+    DELETE FROM dbo.Customers
+    WHERE UserId IN (SELECT UserId FROM dbo.Users WHERE Username LIKE 'demo_%');
+
+    DELETE FROM dbo.Users WHERE Username LIKE 'demo_%';
+
+    -- Xóa logs demo
+    EXEC dbo.sp_Demo_ClearLogs @Scenario = N'REGISTER';
+
+    EXEC dbo.sp_Demo_Log
+        @Scenario = N'REGISTER',
+        @Actor    = N'System',
+        @Action   = N'RESET',
+        @Message  = N'Reset hoàn tất. Sẵn sàng chạy demo.';
+END;
+GO
+
+-- 2. BAD: Tạo tài khoản KHÔNG dùng TRANSACTION
+--    → Nếu bước tạo BankAccount lỗi, User và Customer vẫn bị ghi vào DB (orphan)
+CREATE OR ALTER PROCEDURE dbo.sp_Demo_Register_Bad
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @Scenario   NVARCHAR(50) = N'REGISTER';
+    DECLARE @Actor      NVARCHAR(20) = N'BAD';
+    DECLARE @UserId     UNIQUEIDENTIFIER = NEWID();
+    DECLARE @CustomerId UNIQUEIDENTIFIER = NEWID();
+    DECLARE @RoleId     UNIQUEIDENTIFIER;
+
+    -- Lấy role Customer
+    SELECT @RoleId = RoleId FROM dbo.Roles WHERE RoleName = 'Customer';
+
+    EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'START',
+        @Message=N'[BAD] Bắt đầu đăng ký - KHÔNG có BEGIN TRANSACTION';
+
+    -- Bước 1: Tạo User (KHÔNG có transaction bao ngoài)
+    BEGIN TRY
+        INSERT INTO dbo.Users (UserId, RoleId, Username, PasswordHash)
+        VALUES (@UserId, @RoleId, 'demo_user_bad', '$2b$12$placeholder_hash_bad');
+
+        EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'INSERT',
+            @Message=N'[BAD] ✅ Bước 1: INSERT Users thành công → UserId = ' +
+                     CAST(@UserId AS NVARCHAR(36));
+    END TRY
+    BEGIN CATCH
+        EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'ERROR',
+            @Message=N'[BAD] ❌ Bước 1 thất bại: ' + ERROR_MESSAGE();
+        RETURN;
+    END CATCH;
+
+    -- Bước 2: Tạo Customer (KHÔNG có transaction)
+    BEGIN TRY
+        INSERT INTO dbo.Customers (CustomerId, UserId, FullName, Email, PhoneNumber)
+        VALUES (@CustomerId, @UserId, N'Demo User (BAD)', 'demo_bad@test.com', '0900000001');
+
+        EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'INSERT',
+            @Message=N'[BAD] ✅ Bước 2: INSERT Customers thành công → CustomerId = ' +
+                     CAST(@CustomerId AS NVARCHAR(36));
+    END TRY
+    BEGIN CATCH
+        EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'ERROR',
+            @Message=N'[BAD] ❌ Bước 2 thất bại: ' + ERROR_MESSAGE();
+        RETURN;
+    END CATCH;
+
+    -- Bước 3: Tạo BankAccount - CỐ TÌNH GÂY LỖI (AccountType không hợp lệ)
+    EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'INSERT',
+        @Message=N'[BAD] ⚡ Bước 3: Đang INSERT BankAccounts với AccountType không hợp lệ...';
+
+    BEGIN TRY
+        INSERT INTO dbo.BankAccounts (CustomerId, AccountNumber, AccountType, Balance)
+        VALUES (@CustomerId, '9704_DEMO_BAD', 'INVALID_TYPE', 0.00);
+        -- ↑ CHECK CONSTRAINT sẽ REJECT vì AccountType phải là payment/saving/debit
+    END TRY
+    BEGIN CATCH
+        EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'ERROR',
+            @Message=N'[BAD] ❌ Bước 3 THẤT BẠI: ' + ERROR_MESSAGE();
+
+        EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'RESULT',
+            @Message=N'[BAD] ⚠️ KẾT QUẢ: User + Customer ĐÃ ĐƯỢC GHI vào DB nhưng KHÔNG có BankAccount! ' +
+                     N'→ Customer "mồ côi" không thể đăng nhập có tài khoản.';
+    END CATCH;
+END;
+GO
+
+-- 3. FIX: Tạo tài khoản CÓ dùng TRANSACTION (gọi sp_RegisterCustomer)
+--    → Nếu bất kỳ bước nào lỗi, ROLLBACK toàn bộ — DB sạch sẽ
+CREATE OR ALTER PROCEDURE dbo.sp_Demo_Register_Fix
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @Scenario      NVARCHAR(50) = N'REGISTER';
+    DECLARE @Actor         NVARCHAR(20) = N'FIX';
+    DECLARE @UserId        UNIQUEIDENTIFIER;
+    DECLARE @CustomerId    UNIQUEIDENTIFIER;
+    DECLARE @AccountNumber NVARCHAR(20);
+
+    EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'START',
+        @Message=N'[FIX] Bắt đầu đăng ký - CÓ BEGIN TRANSACTION (gọi sp_RegisterCustomer)';
+
+    EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'BEGIN',
+        @Message=N'[FIX] BEGIN TRANSACTION — toàn bộ 3 bước INSERT nằm trong 1 transaction';
+
+    BEGIN TRY
+        -- Gọi sp_RegisterCustomer - bên trong nó có BEGIN TRANSACTION / ROLLBACK
+        EXEC dbo.sp_RegisterCustomer
+            @Username      = 'demo_user_fix',
+            @PasswordHash  = '$2b$12$placeholder_hash_fix',
+            @FullName      = N'Demo User (FIX)',
+            @Email         = 'demo_fix@test.com',
+            @PhoneNumber   = '0900000002',
+            @UserId        = @UserId        OUTPUT,
+            @CustomerId    = @CustomerId    OUTPUT,
+            @AccountNumber = @AccountNumber OUTPUT;
+
+        EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'INSERT',
+            @Message=N'[FIX] ✅ Bước 1: INSERT Users thành công';
+
+        EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'INSERT',
+            @Message=N'[FIX] ✅ Bước 2: INSERT Customers thành công';
+
+        EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'INSERT',
+            @Message=N'[FIX] ✅ Bước 3: INSERT BankAccounts thành công → Số TK: ' + @AccountNumber;
+
+        EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'COMMIT',
+            @Message=N'[FIX] ✅ COMMIT — Tất cả 3 bước thành công, dữ liệu được lưu hoàn chỉnh.';
+
+        EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'RESULT',
+            @Message=N'[FIX] ✅ KẾT QUẢ: User + Customer + BankAccount đều được tạo đầy đủ và nhất quán.';
+
+    END TRY
+    BEGIN CATCH
+        EXEC dbo.sp_Demo_Log @Scenario=@Scenario, @Actor=@Actor, @Action=N'ROLLBACK',
+            @Message=N'[FIX] 🔄 ROLLBACK — Lỗi xảy ra: ' + ERROR_MESSAGE() +
+                     N' → TOÀN BỘ bị hoàn tác, DB vẫn sạch.';
+    END CATCH;
+END;
+GO
+
 -- sp_Deposit: Nạp tiền vào tài khoản
 CREATE OR ALTER PROCEDURE sp_Deposit
     @BankAccountId   UNIQUEIDENTIFIER,

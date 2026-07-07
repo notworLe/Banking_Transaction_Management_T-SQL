@@ -45,13 +45,13 @@ def get_bankers(user=Depends(require_role("Admin"))):
     try:
         cur.execute("""
             SELECT b.BankerId, b.EmployeeCode, b.FullName, b.Email, b.PhoneNumber,
-                   u.Username, u.Status, u.CreatedAt
+                   u.Username, u.Status, u.CreatedAt, u.UserId
             FROM Bankers b JOIN Users u ON b.UserId = u.UserId
             ORDER BY u.CreatedAt DESC
         """)
         return [{"banker_id": str(r[0]), "employee_code": r[1], "full_name": r[2],
                  "email": r[3], "phone": r[4], "username": r[5],
-                 "status": r[6], "created_at": str(r[7])} for r in cur.fetchall()]
+                 "status": r[6], "created_at": str(r[7]), "user_id": str(r[8])} for r in cur.fetchall()]
     finally:
         cur.close(); conn.close()
 
@@ -85,12 +85,20 @@ def create_banker(form: CreateBankerForm, user=Depends(require_role("Admin"))):
             user_id, form.employee_code, form.full_name, form.email, form.phone
         )
 
-        cur.execute("""
-            INSERT INTO AuditLogs (UserId, ActionType, TargetTable, Description)
-            VALUES (?, 'CREATE_BANKER', 'Bankers', ?)
-        """, user["user_id"], f"Admin tạo banker {form.employee_code} - {form.full_name}")
+        conn.commit()  # commit User + Banker trước
 
-        conn.commit()
+        # Ghi AuditLog riêng — không ảnh hưởng tới transaction chính
+        try:
+            cur.execute("SELECT 1 FROM Users WHERE UserId = ?", user["user_id"])
+            if cur.fetchone():  # chỉ ghi nếu UserId của admin còn tồn tại
+                cur.execute("""
+                    INSERT INTO AuditLogs (UserId, ActionType, TargetTable, Description)
+                    VALUES (?, 'CREATE_BANKER', 'Bankers', ?)
+                """, user["user_id"], f"Admin tạo banker {form.employee_code} - {form.full_name}")
+                conn.commit()
+        except Exception as audit_err:
+            print(f"[AuditLog] Không ghi được log: {audit_err}")
+
         return {"message": "Tạo Banker thành công", "user_id": user_id}
     finally:
         cur.close(); conn.close()
@@ -102,13 +110,22 @@ def update_user_status(user_id: str, form: UpdateStatusForm, user=Depends(requir
     cur = conn.cursor()
     try:
         cur.execute("UPDATE Users SET Status = ? WHERE UserId = ?", form.status, user_id)
+        conn.commit()  # commit status update truoc
+
+        # Ghi AuditLog rieng - khong crash neu token admin cu
         action = "LOCK_USER" if form.status == "locked" else "UNLOCK_USER"
-        cur.execute("""
-            INSERT INTO AuditLogs (UserId, ActionType, TargetTable, TargetId, Description)
-            VALUES (?, ?, 'Users', ?, ?)
-        """, user["user_id"], action, user_id, f"Admin {action} userId={user_id}")
-        conn.commit()
-        return {"message": f"Cập nhật thành {form.status}"}
+        try:
+            cur.execute("SELECT 1 FROM Users WHERE UserId = ?", user["user_id"])
+            if cur.fetchone():
+                cur.execute("""
+                    INSERT INTO AuditLogs (UserId, ActionType, TargetTable, TargetId, Description)
+                    VALUES (?, ?, 'Users', ?, ?)
+                """, user["user_id"], action, user_id, f"Admin {action} userId={user_id}")
+                conn.commit()
+        except Exception as audit_err:
+            print(f"[AuditLog] Khong ghi duoc log: {audit_err}")
+
+        return {"message": f"Cap nhat thanh {form.status}"}
     finally:
         cur.close(); conn.close()
 

@@ -31,7 +31,7 @@ function CustomerProfile() {
 function CustomerAccounts({ onSelect, selectedId }) {
   const [accounts, setAccounts] = useState([]);
   useEffect(() => { apiFetch('/api/customer/accounts').then(setAccounts).catch(() => {}); }, []);
-  if (!accounts.length) return <div className="loading">LOADING ACCOUNTS...</div>;
+  if (!accounts.length) return <div className="loading">Lỗi bạn chưa có tài khoản ngân hàng</div>;
   const typeColor = { payment: 'payment', saving: 'saving', debit: 'debit' };
   return (
     <div className="account-cards">

@@ -97,13 +97,21 @@ def create_account(form: CreateAccountForm, user=Depends(require_role("Banker"))
         )
         account_id = str(cur.fetchone()[0])
 
-        cur.execute("""
-            INSERT INTO AuditLogs (UserId, ActionType, TargetTable, TargetId, Description)
-            VALUES (?, 'CREATE_ACCOUNT', 'BankAccounts', ?, ?)
-        """, user["user_id"], account_id,
-            f"Banker tạo tài khoản {form.account_type} - {form.account_number}")
-        conn.commit()
-        return {"message": "Tạo tài khoản thành công", "account_id": account_id}
+        conn.commit()  # commit account truoc
+
+        try:
+            cur.execute("SELECT 1 FROM Users WHERE UserId = ?", user["user_id"])
+            if cur.fetchone():
+                cur.execute("""
+                    INSERT INTO AuditLogs (UserId, ActionType, TargetTable, TargetId, Description)
+                    VALUES (?, 'CREATE_ACCOUNT', 'BankAccounts', ?, ?)
+                """, user["user_id"], account_id,
+                    f"Banker tao tai khoan {form.account_type} - {form.account_number}")
+                conn.commit()
+        except Exception as e:
+            print(f"[AuditLog] {e}")
+
+        return {"message": "Tao tai khoan thanh cong", "account_id": account_id}
     finally:
         cur.close(); conn.close()
 
@@ -118,12 +126,20 @@ def update_account_status(account_id: str, form: UpdateAccountStatusForm,
                     form.status, account_id)
         action = {"locked": "LOCK_ACCOUNT", "active": "UNLOCK_ACCOUNT",
                   "closed": "CLOSE_ACCOUNT"}.get(form.status, "UPDATE_ACCOUNT")
-        cur.execute("""
-            INSERT INTO AuditLogs (UserId, ActionType, TargetTable, TargetId, Description)
-            VALUES (?, ?, 'BankAccounts', ?, ?)
-        """, user["user_id"], action, account_id, f"Banker {action} accountId={account_id}")
-        conn.commit()
-        return {"message": f"Cập nhật trạng thái thành {form.status}"}
+        conn.commit()  # commit status truoc
+
+        try:
+            cur.execute("SELECT 1 FROM Users WHERE UserId = ?", user["user_id"])
+            if cur.fetchone():
+                cur.execute("""
+                    INSERT INTO AuditLogs (UserId, ActionType, TargetTable, TargetId, Description)
+                    VALUES (?, ?, 'BankAccounts', ?, ?)
+                """, user["user_id"], action, account_id, f"Banker {action} accountId={account_id}")
+                conn.commit()
+        except Exception as e:
+            print(f"[AuditLog] {e}")
+
+        return {"message": f"Cap nhat trang thai thanh {form.status}"}
     finally:
         cur.close(); conn.close()
 
