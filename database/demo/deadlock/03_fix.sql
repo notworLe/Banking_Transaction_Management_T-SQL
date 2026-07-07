@@ -87,7 +87,7 @@ BEGIN
 
         IF @FirstAction = N'LOCK_SOURCE'
         BEGIN
-            UPDATE dbo.BankAccounts
+            UPDATE dbo.BankAccounts WITH (ROWLOCK)
             SET Balance = Balance - @Amount
             WHERE BankAccountId = @SourceAccountId;
 
@@ -100,7 +100,7 @@ BEGIN
         END
         ELSE
         BEGIN
-            UPDATE dbo.BankAccounts
+            UPDATE dbo.BankAccounts WITH (ROWLOCK)
             SET Balance = Balance + @Amount
             WHERE BankAccountId = @DestinationAccountId;
 
@@ -123,7 +123,7 @@ BEGIN
 
         IF @SecondAction = N'LOCK_DESTINATION'
         BEGIN
-            UPDATE dbo.BankAccounts
+            UPDATE dbo.BankAccounts WITH (ROWLOCK)
             SET Balance = Balance + @Amount
             WHERE BankAccountId = @DestinationAccountId;
 
@@ -136,7 +136,7 @@ BEGIN
         END
         ELSE
         BEGIN
-            UPDATE dbo.BankAccounts
+            UPDATE dbo.BankAccounts WITH (ROWLOCK)
             SET Balance = Balance - @Amount
             WHERE BankAccountId = @SourceAccountId;
 

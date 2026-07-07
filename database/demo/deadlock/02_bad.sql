@@ -66,7 +66,7 @@ BEGIN
 
         BEGIN TRANSACTION;
 
-        UPDATE dbo.BankAccounts
+        UPDATE dbo.BankAccounts WITH (ROWLOCK)
         SET Balance = Balance - @Amount
         WHERE BankAccountId = @SourceAccountId;
 
@@ -86,7 +86,7 @@ BEGIN
 
         WAITFOR DELAY @Delay;
 
-        UPDATE dbo.BankAccounts
+        UPDATE dbo.BankAccounts WITH (ROWLOCK)
         SET Balance = Balance + @Amount
         WHERE BankAccountId = @DestinationAccountId;
 

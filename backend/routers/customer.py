@@ -103,8 +103,8 @@ def transfer(form: TransferForm, user=Depends(require_role("Customer"))):
     try:
         # Verify from_account belongs to this customer
         cur.execute("""
-            SELECT 1 FROM BankAccounts ba
-            JOIN Customers c ON ba.CustomerId = c.CustomerId
+            SELECT 1 FROM BankAccounts ba WITH (NOLOCK)
+            JOIN Customers c WITH (NOLOCK) ON ba.CustomerId = c.CustomerId
             WHERE ba.BankAccountId = ? AND c.UserId = ? AND ba.Status = 'active'
         """, form.from_account_id, user["user_id"])
         if not cur.fetchone():
@@ -112,7 +112,7 @@ def transfer(form: TransferForm, user=Depends(require_role("Customer"))):
             raise HTTPException(status_code=403, detail="Tài khoản không hợp lệ")
 
         # Get destination account
-        cur.execute("SELECT BankAccountId FROM BankAccounts WHERE AccountNumber = ? AND Status = 'active'",
+        cur.execute("SELECT BankAccountId FROM BankAccounts WITH (NOLOCK) WHERE AccountNumber = ? AND Status = 'active'",
                     form.to_account_number)
         to_row = cur.fetchone()
         if not to_row:
@@ -159,7 +159,7 @@ def transfer(form: TransferForm, user=Depends(require_role("Customer"))):
                         delay_str, is_fix)
         elif is_deadlock_demo:
             # Look up source account number
-            cur.execute("SELECT AccountNumber FROM BankAccounts WHERE BankAccountId = ?", form.from_account_id)
+            cur.execute("SELECT AccountNumber FROM BankAccounts WITH (NOLOCK) WHERE BankAccountId = ?", form.from_account_id)
             source_acc_num = cur.fetchone()[0]
             
             proc = "sp_Demo_Deadlock_Bad" if type_name == "BAD" else "sp_Demo_Deadlock_Fix"
